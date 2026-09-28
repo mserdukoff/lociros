@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Art, LineIcon } from "@/components/landing/art";
+import { LogoMark } from "@/components/logo";
 import type { LangCode } from "@/lib/types";
 
 const STAMP: Record<LangCode, { text: string; vertical: boolean; font: string }> = {
@@ -22,8 +23,9 @@ export function ReaderRail({ language, current }: { language: LangCode; current?
     <aside className="fixed inset-y-0 left-0 z-10 hidden w-[13.5rem] flex-col border-r border-rule/80 bg-paper-raised/40 px-4 pb-6 pt-8 lg:flex">
       <Link
         href="/"
-        className="px-3 font-display text-[1.75rem] font-medium tracking-[-0.02em] text-ink"
+        className="flex items-center gap-2 px-3 font-display text-[1.75rem] font-medium tracking-[-0.02em] text-ink"
       >
+        <LogoMark className="h-[1.6em] w-auto shrink-0" />
         Lociros
       </Link>
       <nav aria-label="Sections" className="mt-10 flex flex-col gap-1">

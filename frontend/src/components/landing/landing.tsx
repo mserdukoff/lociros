@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { AuthPanel, signOutAccount } from "@/components/auth-panel";
 import { DemoBanner } from "@/components/demo-banner";
+import { LogoMark } from "@/components/logo";
 import { Segmented } from "@/components/segmented";
 import { fetchMe } from "@/lib/api";
 import { isDemo } from "@/lib/demo";
@@ -316,7 +317,8 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
       {/* ---------- hero ---------- */}
       <Wrap>
         <header className="flex items-center justify-between py-5 sm:py-6">
-          <span className="flex items-baseline gap-2.5 font-display text-[1.375rem] font-medium tracking-[-0.02em] text-ink">
+          <span className="flex items-center gap-2 font-display text-[1.375rem] font-medium tracking-[-0.02em] text-ink">
+            <LogoMark className="h-[2.05em] w-auto shrink-0" />
             Lociros
             {demo ? <span className="t-eyebrow">Demo</span> : null}
           </span>
@@ -704,7 +706,10 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
       <footer className="border-t border-rule/70">
         <Section>
         <Wrap className="flex flex-wrap items-baseline justify-between gap-x-8 gap-y-2 py-7 text-[12.5px] text-ink/45">
-          <span className="font-display text-[15px] text-ink/70">Lociros</span>
+          <span className="inline-flex items-center gap-1.5 font-display text-[15px] text-ink/70">
+            <LogoMark className="h-[1.35em] w-auto" />
+            Lociros
+          </span>
           <span>
             Every passage checked before you see it.{" "}
             {demo ? "A single-user demo." : "An account keeps your shelf."}

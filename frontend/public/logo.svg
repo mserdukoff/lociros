@@ -1,8 +1,4 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="14.2" fill="#F8F4EB"/>
-  <g transform="translate(10.24 8.06) scale(0.272)">
-    
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 176" fill="none">
   <defs>
     <clipPath id="window">
       <path d="M36 152V80C36 56 52 32 80 22C108 32 124 56 124 80V152Z"/>
@@ -28,7 +24,5 @@
     <path d="M16 150c22-14 42-6 58 8" stroke="#1F2F4B" stroke-width="3.8" stroke-linecap="round"/>
     <path d="M142 140c-20-14-40-8-54 8" stroke="#1F2F4B" stroke-width="4.2" stroke-linecap="round"/>
     <path d="M144 150c-22-14-42-6-58 8" stroke="#1F2F4B" stroke-width="3.8" stroke-linecap="round"/>
-  </g>
-
   </g>
 </svg>

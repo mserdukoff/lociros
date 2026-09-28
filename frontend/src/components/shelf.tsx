@@ -9,6 +9,7 @@ import { Seal } from "@/components/seal";
 import { DemoBanner } from "@/components/demo-banner";
 import { AuthPanel } from "@/components/auth-panel";
 import { Art } from "@/components/landing/art";
+import { LogoMark } from "@/components/logo";
 import { fetchLibrary, fetchMe, fetchReview, saveNews, unstarWord } from "@/lib/api";
 import { isDemo } from "@/lib/demo";
 import { loadLanguage, saveLanguage } from "@/lib/device";
@@ -412,21 +413,24 @@ export function Shelf() {
 
   return (
     <div className="flex flex-col gap-12">
-      <header className="flex items-center justify-between gap-4 border-b border-rule/70 pb-5">
+      <header className="flex flex-col items-start gap-3 border-b border-rule/70 pb-5 sm:flex-row sm:items-center sm:justify-between">
         <Link
           href="/"
-          className="font-display text-[1.375rem] font-medium tracking-[-0.02em] text-ink"
+          className="flex shrink-0 items-center gap-2 font-display text-[1.375rem] font-medium tracking-[-0.02em] text-ink"
         >
+          <LogoMark className="h-[2.05em] w-auto shrink-0" />
           Lociros
         </Link>
         {langs.length > 1 ? (
-          <Segmented
-            ariaLabel="Language"
-            size="sm"
-            options={langs.map((l) => ({ id: l.id, label: l.label, hint: l.native }))}
-            value={language}
-            onChange={onLanguage}
-          />
+          <div className="w-full sm:w-auto">
+            <Segmented
+              ariaLabel="Language"
+              size="sm"
+              options={langs.map((l) => ({ id: l.id, label: l.label, hint: l.native }))}
+              value={language}
+              onChange={onLanguage}
+            />
+          </div>
         ) : null}
       </header>
 
