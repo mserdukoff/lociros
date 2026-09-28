@@ -48,9 +48,9 @@ function Plain({ children }: { children: React.ReactNode; className?: string }) 
 
 const KEPT_OUT: Record<LangCode, string> = {
   ja: "At A2, て-form and plain past are allowed. The check keeps out ている, conditionals, potential, causative, passive, relative clauses, and keigo.",
-  ru: "At A2, nominative, accusative, genitive, prepositional, and dative are allowed, in present, past, and future. Instrumental, participles, and который are kept out.",
-  it: "At A2, the present, passato prossimo, and the simple future are allowed. Imperfetto, the conditional, the subjunctive, the gerund, and the remote past are kept out.",
-  ar: "At A2, present, past, and future are allowed, including common Form II and Form IV verbs. The dual, إنّ, the relative الذي, and the passive are kept out.",
+  ru: "At A2, nominative, accusative, genitive, prepositional, and dative are allowed, in present, past, and future. Instrumental, participles, verbal adverbs, который, and бы are kept out.",
+  it: "At A2, the present, passato prossimo, and the simple future are allowed. Imperfetto, the conditional, the subjunctive, the gerund, the remote past, relative che, and benché are kept out.",
+  ar: "At A2, present, past, and future are allowed, with Form I verbs and common Form II and Form IV verbs. The dual, إنّ, the relative الذي, كان + verb, the passive, and Forms III and V to X are kept out.",
 };
 
 const ANALYZER: Record<LangCode, string> = {

@@ -47,9 +47,12 @@ export function Drift({ lang }: { lang: LangCode }) {
             <p lang={lang} dir={dir} className={`text-[1.08rem] leading-[1.95] text-ink ${font}`}>
               {sample.drifted.map((seg, i) =>
                 seg.flag ? (
-                  <span key={i} className="relative inline whitespace-nowrap">
+                  <span key={i}>
                     <span className="border-b-[1.5px] border-terracotta">{seg.text}</span>
-                    <sup className="ml-1 font-sans text-[11px] font-medium text-terracotta">
+                    <sup
+                      dir="ltr"
+                      className="mx-1 whitespace-nowrap font-sans text-[11px] font-medium text-terracotta"
+                    >
                       {seg.flag}
                     </sup>
                   </span>
