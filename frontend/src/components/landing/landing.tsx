@@ -20,7 +20,6 @@ import {
 } from "@/lib/device";
 import {
   LANGUAGES,
-  enabledLanguages,
   readingFont,
   type CefrLevel,
   type LangCode,
@@ -356,12 +355,10 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
   const [me, setMe] = useState<MeResponse | null>(null);
   const [counts, setCounts] = useState<Partial<Record<LangCode, number>>>({});
   const [returning, setReturning] = useState<Returning | null>(null);
-  const [meLoaded, setMeLoaded] = useState(false);
-  const langs = enabledLanguages(me).map((l) => l.id);
-  // Until /api/me answers, trust the stored language instead of flashing Japanese.
-  const enabled = meLoaded ? langs : null;
-  const wanted = picked ?? stored;
-  const lang = !meLoaded || langs.includes(wanted) ? wanted : "ja";
+  // Every language has a hand-authored demo, so the landing page features all
+  // of them; the shelf falls back to Japanese if one is not public yet.
+  const langs = LANGUAGES.map((l) => l.id);
+  const lang = picked ?? stored;
   const language = LANGUAGES.find((item) => item.id === lang)?.label ?? "Japanese";
   const level = DEMO[lang].level;
   const article = /^[aeiou]/i.test(language) ? "An" : "A";
@@ -463,8 +460,7 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
   const refreshMe = useCallback(() => {
     void fetchMe()
       .then(setMe)
-      .catch(() => setMe(null))
-      .finally(() => setMeLoaded(true));
+      .catch(() => setMe(null));
   }, []);
 
   useEffect(() => {
@@ -596,21 +592,14 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
               </Item>
               <Item>
                 <div className="mt-7 flex min-h-[2.25rem] items-center">
-                  {enabled && enabled.length > 1 ? (
-                    <Segmented
-                      animated={anim}
-                      ariaLabel="Language"
-                      size="sm"
-                      options={LANGUAGES.filter((l) => enabled.includes(l.id)).map((l) => ({
-                        id: l.id,
-                        label: l.label,
-                      }))}
-                      value={lang}
-                      onChange={chooseLang}
-                    />
-                  ) : enabled ? (
-                    <p className="text-[14px] text-ink/55">{language}, from A1 to B2.</p>
-                  ) : null}
+                  <Segmented
+                    animated={anim}
+                    ariaLabel="Language"
+                    size="sm"
+                    options={LANGUAGES.map((l) => ({ id: l.id, label: l.label }))}
+                    value={lang}
+                    onChange={chooseLang}
+                  />
                 </div>
               </Item>
               <Item>
