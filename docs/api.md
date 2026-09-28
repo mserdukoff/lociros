@@ -29,6 +29,7 @@ CORS: `CORS_ORIGINS` (default localhost:3000). `PUBLIC_BASE_URL` is always inclu
 | `GET` | `/library?language=ja\|ru\|it\|ar` | `X-Device-Id` | `LibraryResponse` (`placed`, `news_notice`, item `source_name` / `source_date`) |
 | `GET` | `/shelf/counts` | | `{ counts: { ja: n, … } }`: passages a reader can open (public, passed calibration, not news), public languages only. Cached ten minutes in-process. The landing page's proof line |
 | `POST` | `/events` | `{ kind, passage_id?, payload? }` + `X-Device-Id` | `{ "ok": true }`. Browser-side funnel events: `landing_view`, `demo_tap`, `start_click`, `placement_start`, `session_start`. **400** for the kinds the API records itself (`placement_done`, `read_complete`, `account_linked`, `comprehension`) |
+| `GET` | `/admin/overview` | Bearer token (admin) | `AdminOverview`: API status, totals, last 7 days, funnel, counts, recent users and jobs. Read by the admin app at `admin.lociros.com` |
 | `GET` | `/trial/metrics?days=30` | Bearer token (admin) | Trial gates plus `funnel`: per-step devices and rates against landing views, 2- and 7-day returns, and `sticky_test` arms |
 | `GET` | `/placement?language=ja\|ru\|it\|ar` | | Placement passage and questions, without the answer key |
 | `POST` | `/placement` | `{ language, answers }` + `X-Device-Id` | `{ level, correct, total, placed, next_id }`. `next_id` is the passage the result screen opens |

@@ -2,7 +2,6 @@ import { isDemo } from "./demo";
 import * as demoApi from "./demo-api";
 import { deviceHeaders } from "./device";
 import type {
-  AdminOverview,
   CefrLevel,
   FeedbackRating,
   FeedbackResult,
@@ -313,15 +312,4 @@ export function track(kind: TrackKind, payload?: Record<string, string | number 
     keepalive: true,
     body: JSON.stringify({ kind, payload: payload ?? null }),
   }, true)).catch(() => undefined);
-}
-
-export async function fetchAdminOverview(): Promise<AdminOverview> {
-  if (isDemo()) {
-    throw new Error("Admin is not available in the demo.");
-  }
-  const res = await fetch("/api/admin/overview", opts({ cache: "no-store" }));
-  if (!res.ok) {
-    throw new Error(await readError(res));
-  }
-  return res.json();
 }

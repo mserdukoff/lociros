@@ -103,7 +103,7 @@ Do not add languages, audio, or SRS until there is signal this loop works:
 
 ### The landing funnel
 
-Retention here means the share of landing visitors who finish and rate a first passage, then come back on another day. `trial_metrics` includes a `funnel` block, shown on `/admin`, that follows every browser that viewed the landing page in the window:
+Retention here means the share of landing visitors who finish and rate a first passage, then come back on another day. `trial_metrics` includes a `funnel` block, shown on the admin dashboard at `admin.lociros.com`, that follows every browser that viewed the landing page in the window:
 
 | Step | Event | Recorded by |
 |------|-------|-------------|

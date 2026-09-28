@@ -1,0 +1,114 @@
+@import "tailwindcss";
+
+/* The main app's paper and ink, trimmed to what the dashboard uses. */
+:root {
+  --paper: #f4efe6;
+  --paper-raised: #fbf9f4;
+  --ink: #1c2538;
+  --rule: #dcd5c7;
+  --terracotta: #b5452a;
+  --sage: #4f6e57;
+  --elev-card: 0 1px 2px rgb(28 37 56 / 0.05), 0 12px 32px -14px rgb(28 37 56 / 0.2);
+
+  --serif: var(--font-literata), "Iowan Old Style", Palatino, "Times New Roman", serif;
+  --sans: var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-paper-raised: var(--paper-raised);
+  --color-ink: var(--ink);
+  --color-rule: var(--rule);
+  --color-terracotta: var(--terracotta);
+  --color-sage: var(--sage);
+  --font-sans: var(--sans);
+  --font-display: var(--serif);
+  --radius-card: 8px;
+  --shadow-card: var(--elev-card);
+}
+
+html,
+body {
+  background: var(--paper);
+  color: var(--ink);
+  min-height: 100%;
+}
+
+body {
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+@utility t-eyebrow {
+  font-size: 12.5px;
+  line-height: 1.25;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: color-mix(in srgb, var(--ink) 55%, transparent);
+}
+
+@utility t-heading {
+  font-family: var(--serif);
+  font-weight: 450;
+  letter-spacing: -0.016em;
+  line-height: 1.14;
+  text-wrap: balance;
+}
+
+@utility t-quiet {
+  font-size: 13px;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+  color: color-mix(in srgb, var(--ink) 50%, transparent);
+  transition: color 150ms ease;
+  &:hover {
+    color: var(--ink);
+  }
+}
+
+@utility tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+@utility sheet {
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--ink) 7%, transparent);
+  background: var(--paper-raised);
+  box-shadow: var(--elev-card);
+}
+
+@utility btn-primary {
+  display: inline-flex;
+  height: 3rem;
+  align-items: center;
+  justify-content: center;
+  padding-inline: 1.5rem;
+  border-radius: var(--radius-card);
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 15px;
+  font-weight: 500;
+  transition: opacity 150ms ease;
+  &:hover {
+    opacity: 0.9;
+  }
+  &:disabled {
+    opacity: 0.5;
+  }
+}
+
+@utility field {
+  height: 3rem;
+  width: 100%;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--rule);
+  background: var(--paper-raised);
+  padding-inline: 0.875rem;
+  font-size: 15px;
+  color: var(--ink);
+  &:focus {
+    outline: 2px solid color-mix(in srgb, var(--ink) 35%, transparent);
+    outline-offset: 1px;
+  }
+}

@@ -174,7 +174,28 @@ curl -fsS "https://YOUR_VERCEL_DOMAIN/api/health/ready"
 
 Open `/library`. The shelf should load from FastAPI, not the static demo banner.
 
-Set backend `PUBLIC_BASE_URL` and `CORS_ORIGINS` to the **frontend** origin (the URL users type). Set `ADMIN_EMAILS` to the address that should open `/admin`.
+Set backend `PUBLIC_BASE_URL` and `CORS_ORIGINS` to the **frontend** origin (the URL users type). Set `ADMIN_EMAILS` to the address that should open the admin dashboard.
+
+---
+
+## 3b. Admin dashboard on Vercel (`admin.lociros.com`)
+
+The dashboard is its own Next app in `admin/`. It shows a sign-in form, and only unlocks for `ADMIN_EMAIL`. The main site's `/admin` redirects there.
+
+1. In Vercel, add a **second** project from the same repo.
+2. Set **Root Directory** to `admin`.
+3. Add environment variables:
+   - `ADMIN_EMAIL` = `m.serdukoff@gmail.com`
+   - `NLP_BACKEND_URL` = the same FastAPI origin as the frontend
+   - `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` = the same values as the frontend
+   - `ADMIN_TIME_ZONE` (optional, default `America/New_York`)
+4. Under **Domains**, add `admin.lociros.com`, then create the DNS record Vercel shows (a `CNAME` to `cname.vercel-dns.com`).
+5. On the backend, `ADMIN_EMAILS` must include the same address. The API checks it again on `/api/admin/overview`.
+6. On the frontend project, set `NEXT_PUBLIC_ADMIN_URL` only if the dashboard lives somewhere other than `https://admin.lociros.com`.
+
+The admin app calls FastAPI from the server only. The access token never reaches the browser, and there is no sign-up form. The admin account must already exist in Supabase Auth.
+
+Local run: `cd admin && npm install && npm run dev` (port 3100), with the same env vars in `admin/.env.local`.
 
 Google sign-in (later): enable the Google provider in Supabase Auth. On Google Cloud, the authorized redirect is `https://gsvkckwuiqajwfkynjrm.supabase.co/auth/v1/callback`. Add your Vercel origin to Redirect URLs only after that frontend exists.
 
@@ -193,7 +214,7 @@ Google sign-in (later): enable the Google provider in Supabase Auth. On Google C
 | `CORS_ORIGINS` | Same frontend origin |
 | `CORS_ORIGIN_REGEX` | Optional, `https://.*\.vercel\.app` for preview URLs |
 | `OPENROUTER_API_KEY` | Generation, LLM gloss, translation |
-| `ADMIN_EMAILS` | Comma-separated emails that can open `/admin` |
+| `ADMIN_EMAILS` | Comma-separated emails the admin API accepts (include the admin app's `ADMIN_EMAIL`) |
 | `SUPABASE_URL` | `https://PROJECT.supabase.co` — inferred from a direct `db.*.supabase.co` URI |
 | `SKIP_SEED` | `true` on extra API/worker processes after the first seed |
 

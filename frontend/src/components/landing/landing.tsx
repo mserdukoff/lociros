@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { AuthPanel, signOutAccount } from "@/components/auth-panel";
 import { ContinueCard } from "@/components/continue-card";
+import { ADMIN_URL } from "@/lib/admin-url";
 import { DemoBanner } from "@/components/demo-banner";
 import { LogoMark } from "@/components/logo";
 import { Segmented } from "@/components/segmented";
@@ -629,9 +630,9 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
                 </ul>
               </Item>
               {!demo && me?.admin ? (
-                <Link href="/admin" className="t-quiet mt-4 inline-block">
+                <a href={ADMIN_URL} className="t-quiet mt-4 inline-block">
                   Admin
-                </Link>
+                </a>
               ) : null}
             </Col>
 

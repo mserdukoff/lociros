@@ -1,11 +1,6 @@
-import type { Metadata } from "next";
-import { AdminDashboard } from "@/components/admin-dashboard";
-
-export const metadata: Metadata = {
-  title: "Admin",
-  robots: { index: false, follow: false },
-};
+import { redirect } from "next/navigation";
+import { ADMIN_URL } from "@/lib/admin-url";
 
 export default function AdminPage() {
-  return <AdminDashboard />;
+  redirect(ADMIN_URL);
 }

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { ADMIN_URL } from "@/lib/admin-url";
 import { logout } from "@/lib/api";
 import { saveAccountPrompt } from "@/lib/device";
 import { createClient } from "@/lib/supabase/client";
@@ -78,9 +79,9 @@ export function AuthPanel({
               Start reading
             </Link>
             {me.admin ? (
-              <Link href="/admin" className="t-quiet">
+              <a href={ADMIN_URL} className="t-quiet">
                 Admin
-              </Link>
+              </a>
             ) : null}
             <button type="button" onClick={() => void signOut()} className="t-quiet">
               Sign out
@@ -94,9 +95,9 @@ export function AuthPanel({
         <p className="min-w-0 truncate">{me.display_name || me.email}</p>
         <div className="flex shrink-0 items-baseline gap-4">
           {me.admin ? (
-            <Link href="/admin" className="t-quiet underline decoration-ink/20 underline-offset-4">
+            <a href={ADMIN_URL} className="t-quiet underline decoration-ink/20 underline-offset-4">
               Admin
-            </Link>
+            </a>
           ) : null}
           <button
             type="button"
