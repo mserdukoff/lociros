@@ -254,7 +254,7 @@ Supported codes: `ja` (public), `it`, `ru`, and `ar` (env-flagged). A further la
 6. `SUPPORTED` in `backend/app/services/data.py` and language checks on `/library`
 7. A row in `frontend/src/lib/seal-copy.ts` (`script`, pass word, fail word). Prefer a short exam-stamp word (about 2–8 letters or 2–4 CJK). Missing keys fall back to Latin PASS / FAIL; do not ship a blank seal. Script picks the typeface (`cjk` → gothic, `cyrillic` / `latin` → Literata, `arabic` → Noto Naskh). Set `rtl: true` for right-to-left scripts; the passage, title, and seal then use `dir="rtl"`.
 
-Arabic also ships `data/roots/ar.json` and `roots.py` (the gloss-card analog of kanji). The Docker image downloads CAMeL morphology into `CAMELTOOLS_DATA`. Set `SHOW_ARABIC=true` to put Arabic on the shelf.
+Arabic also ships `data/roots/ar.json` and `roots.py` (the gloss-card analog of kanji). The Docker image downloads CAMeL morphology into `CAMELTOOLS_DATA`. Arabic is on the shelf unless `SHOW_ARABIC=false`.
 
 Grammar and vocab JSON are loaded with `lru_cache`. Restart the backend after editing them.
 

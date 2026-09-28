@@ -77,9 +77,9 @@ class Settings(BaseSettings):
     azure_speech_region: str = ""
     azure_speech_voice: str = "ja-JP-NanamiNeural"
     audio_dir: str = ""
-    show_russian: bool = False
-    show_italian: bool = False
-    show_arabic: bool = False
+    show_russian: bool = True
+    show_italian: bool = True
+    show_arabic: bool = True
     require_auth: bool = False
     generate_monthly_cap: int = 10
     auth_cookie_name: str = "lociros_token"

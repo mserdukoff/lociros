@@ -593,9 +593,9 @@ Grammar JSON is edited by hand. After changing grammar or vocab, restart the bac
 | `SKIP_SEED` | `false` | Skip library/catalog seed on extra API/worker processes after first boot |
 | `GENERATE_WORKERS` | `2` | Background threads per process that run generation jobs. Set `0` on API tasks if a dedicated worker service handles generation |
 | `GENERATE_MAX_PENDING` | `3` | Max queued/running jobs per device or signed-in user |
-| `SHOW_RUSSIAN` | `false` | Put Russian on the public shelf |
-| `SHOW_ITALIAN` | `false` | Put Italian on the public shelf |
-| `SHOW_ARABIC` | `false` | Put Arabic on the public shelf |
+| `SHOW_RUSSIAN` | `true` | Russian on the public shelf. Set `false` to hide it |
+| `SHOW_ITALIAN` | `true` | Italian on the public shelf. Set `false` to hide it |
+| `SHOW_ARABIC` | `true` | Arabic on the public shelf. Set `false` to hide it |
 
 **Frontend**
 
@@ -618,7 +618,7 @@ Grammar JSON is edited by hand. After changing grammar or vocab, restart the bac
 - **Generation cost and latency.** Two completion calls plus gloss plus translation is normal on a fail-then-rewrite path. No streaming.
 - **SQLite.** Fine for a single-user or small demo. Compose uses local Postgres. Production uses Supabase.
 - **Guest vs account.** Catalog reading works without an account. Sign-in (Supabase Auth) keeps placement and lemmas across devices.
-- **Languages.** `ja` is public. `it`, `ru`, and `ar` are behind `SHOW_ITALIAN`, `SHOW_RUSSIAN`, and `SHOW_ARABIC`. Adding a language means grammar JSON, vocab/gloss, a morph module, a validator, seed texts, and UI labels.
+- **Languages.** `ja`, `ru`, `it`, and `ar` are all public. `SHOW_RUSSIAN`, `SHOW_ITALIAN`, and `SHOW_ARABIC` can take one off the shelf again. Adding a language means grammar JSON, vocab/gloss, a morph module, a validator, seed texts, and UI labels.
 
 Not in this repo: audio, SRS / Anki export, billed accounts, or official CEFR/JLPT lists.
 

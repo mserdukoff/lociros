@@ -91,7 +91,7 @@ There is no signup before reading. The account is offered under the first **Save
 | Hard reject on failed calibration | Soft fail: store the closer draft, show a warning |
 | Monetization ($5–8/mo) | Not implemented |
 
-Not in this repo: billed accounts, official CEFR or JLPT word lists, C1/C2, or languages other than `ru`, `ja`, `it`, and `ar`. Italian, Russian, and Arabic stay behind `SHOW_ITALIAN` / `SHOW_RUSSIAN` / `SHOW_ARABIC` until they are public.
+Not in this repo: billed accounts, official CEFR or JLPT word lists, C1/C2, or languages other than `ru`, `ja`, `it`, and `ar`. All four are public by default; `SHOW_ITALIAN` / `SHOW_RUSSIAN` / `SHOW_ARABIC` set to `false` take one off the shelf.
 
 ## Success criteria (from the original plan, still relevant)
 
