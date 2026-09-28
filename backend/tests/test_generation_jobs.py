@@ -17,6 +17,7 @@ from app.services.identity import Identity
 
 @pytest.fixture()
 def db():
+    assert engine.url.get_backend_name() == "sqlite", "refusing to drop tables outside SQLite"
     Base.metadata.create_all(bind=engine)
     session = SessionLocal()
     try:
