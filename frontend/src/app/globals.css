@@ -216,6 +216,26 @@ body {
   mask-composite: intersect;
 }
 
+/* a hand stroke that draws itself once; the text it marks is visible from the first paint */
+.ink-draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: ink-draw 0.9s cubic-bezier(0.6, 0, 0.3, 1) 0.35s forwards;
+}
+
+@keyframes ink-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ink-draw {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+}
+
 /* ---------- controls ---------- */
 
 @utility btn-primary {

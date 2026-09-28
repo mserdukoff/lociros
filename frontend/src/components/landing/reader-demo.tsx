@@ -36,8 +36,10 @@ function DemoToggle({
  * gloss components as /passage/[id]; nothing here is a mockup.
  * Mounted with key={lang} so switching language resets the selection.
  * From lg up the gloss floats off the sheet's lower edge instead of
- * pushing the passage around, unless `inlineGloss` keeps it in the flow
- * (the landing hero, where a floating gloss would cover the next section).
+ * pushing the passage around. With `inlineGloss` (the landing hero) it
+ * floats at every width over a fixed reserve below the sheet, so a tall
+ * kanji gloss and a short particle gloss take the same room and nothing
+ * under the hero moves when the word changes.
  */
 export function ReaderDemo({
   lang,
@@ -76,7 +78,7 @@ export function ReaderDemo({
   }
 
   return (
-    <div className="relative">
+    <div className={inlineGloss ? "relative pb-[var(--gloss-reserve)] [--gloss-reserve:20.5rem]" : "relative"}>
       <div className="sheet flex flex-col overflow-hidden">
         <div className="flex flex-col gap-3 border-b border-rule/70 px-5 pb-4 pt-4 sm:px-6">
           <div className="flex items-center gap-3">
@@ -136,7 +138,7 @@ export function ReaderDemo({
       <div
         className={
           inlineGloss
-            ? "sheet-float relative z-20 mx-3 -mt-5 px-5 py-4 sm:ml-auto sm:mr-[-1.5rem] sm:w-[22rem]"
+            ? "sheet-float absolute inset-x-3 top-[calc(100%-var(--gloss-reserve)-1.25rem)] z-20 max-h-[calc(var(--gloss-reserve)+1.25rem)] overflow-y-auto px-5 py-4 sm:left-auto sm:right-[-1.5rem] sm:w-[22rem]"
             : `sheet-float z-20 mt-3 px-5 py-4 lg:absolute lg:-right-12 lg:top-[calc(100%-1.75rem)] lg:mt-0 lg:max-h-[19rem] lg:w-[21rem] lg:overflow-y-auto ${
                 open ? "" : "lg:hidden"
               }`

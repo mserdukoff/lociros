@@ -140,6 +140,29 @@ function Eyebrow({ children, accent = false }: { children: React.ReactNode; acce
   return <p className={`t-eyebrow ${accent ? "text-terracotta!" : ""}`}>{children}</p>;
 }
 
+/** One brush stroke under the claim, drawn once in the accent. */
+function InkUnderline() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 300 14"
+      preserveAspectRatio="none"
+      className="art absolute -bottom-2 left-0 h-[0.32em] w-full text-terracotta/85"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+    >
+      <path
+        className="ink-draw"
+        pathLength={1}
+        d="M3 9 C 60 4, 130 3, 190 6 S 270 11, 297 5"
+        strokeWidth="4"
+        vectorEffect="non-scaling-stroke"
+      />
+    </svg>
+  );
+}
+
 function RatingMark({ id, on }: { id: Rating; on: boolean }) {
   const ring =
     id === "easy"
@@ -542,14 +565,27 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
         {variant === "prompt" ? (
           <PromptHero lang={lang} onLang={chooseLang} />
         ) : (
-          <section className="relative grid items-start gap-10 pb-16 pt-6 lg:grid-cols-12 lg:gap-8 lg:pb-20 lg:pt-8">
+          <section className="relative grid items-start gap-10 pb-6 pt-6 lg:grid-cols-12 lg:gap-8 lg:pb-8 lg:pt-8">
+            <Art
+              key={`wash-${lang}`}
+              src={`wash-${lang}`}
+              sizes="640px"
+              className="wash-fade absolute -left-16 bottom-0 z-0 hidden w-[44rem] max-w-none opacity-70 lg:block"
+            />
             <Col className="relative z-10 lg:col-span-5 lg:pt-6">
               <Item>
-                <p className="t-eyebrow">Every word has depth.</p>
+                <p className="t-eyebrow flex items-center gap-3">
+                  <span aria-hidden="true" className="h-px w-8 bg-terracotta/70" />
+                  Every word has depth.
+                </p>
               </Item>
               <Item>
                 <h1 className="t-display mt-5 text-[2.6rem] text-ink sm:text-[3.25rem] lg:text-[3.6rem]">
-                  Graded readers where A2 is actually A2.
+                  Graded readers where A2 is{" "}
+                  <span className="relative whitespace-nowrap">
+                    actually A2.
+                    <InkUnderline />
+                  </span>
                 </h1>
               </Item>
               <Item>
@@ -589,6 +625,20 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
                   </a>
                 </div>
               </Item>
+              <Item>
+                <ul className="mt-10 flex max-w-[27rem] flex-col gap-2.5 border-t border-rule/80 pt-5 text-[13.5px] text-ink/65">
+                  {[
+                    { icon: "list", text: `Every word checked by ${ANALYZER[lang]}` },
+                    { icon: "book", text: "Four levels, A1 to B2, one short read to place you" },
+                    { icon: "bookmark", text: "No account to start. Keep your shelf later." },
+                  ].map((fact) => (
+                    <li key={fact.icon} className="flex items-center gap-3">
+                      <LineIcon name={fact.icon} className="h-[18px] w-[18px] text-terracotta/80" />
+                      {fact.text}
+                    </li>
+                  ))}
+                </ul>
+              </Item>
               {!demo && me?.admin ? (
                 <Link href="/admin" className="t-quiet mt-4 inline-block">
                   Admin
@@ -609,7 +659,13 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
                   </p>
                 </div>
               ) : (
-                <div className="max-w-[36rem]">
+                <div className="relative max-w-[36rem]">
+                  <div aria-hidden="true" className="absolute bottom-[14rem] left-5 hidden w-[11rem] lg:block">
+                    <HandArrow kind="hookUp" className="ml-16 h-10 w-12 -scale-x-100" />
+                    <HandNote rotate={-4} className="text-[1.35rem] leading-tight text-ink/60">
+                      tap any word to open it
+                    </HandNote>
+                  </div>
                   <ReaderDemo
                     key={lang}
                     lang={lang}
