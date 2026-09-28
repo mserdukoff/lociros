@@ -23,6 +23,10 @@ AS $function$
 DECLARE
   display text;
 BEGIN
+  IF to_regclass('public.users') IS NULL THEN
+    RETURN new;
+  END IF;
+
   display := nullif(
     coalesce(
       new.raw_user_meta_data->>'full_name',
@@ -82,6 +86,10 @@ SECURITY DEFINER
 SET search_path TO ''
 AS $function$
 BEGIN
+  IF to_regclass('public.users') IS NULL THEN
+    RETURN new;
+  END IF;
+
   UPDATE public.users
   SET
     email = CASE
