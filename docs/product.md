@@ -63,7 +63,8 @@ Generated texts are stored alongside these and appear on the same shelf.
 ## Core loop
 
 ```
-open /library  →  placement read, if this language has no band yet
+Start reading  →  language, only on a cold open with several languages public
+     →  placement read, if this language has no band yet (taps work; the result opens the next text)
      →  pick Continue (or any card, including today's news)
      →  read, tap words for gloss
      →  answer the passage questions
@@ -73,6 +74,10 @@ open /library  →  placement read, if this language has no band yet
 ```
 
 Optional side path: **Restock the shelf** → wait 20–40 seconds for constrained generation + validation → land on the new reader.
+
+### Onboarding
+
+There is no signup before reading. The account is offered under the first **Saved.** line ("This stays on this browser. Create an account to keep it."). Leaving the passage dismisses it; it comes back once, after the third finished passage, then stops. It is not shown in the demo, when Supabase Auth is not configured, or to a signed-in reader. Two one-time lines teach the app: **Tap any word.** above the placement passage (gone after the first gloss), and the three-in-a-row rule under the rating pills (gone after the first rating). All three states live in `localStorage`: `lociros.tap_hint`, `lociros.rating_hint`, `lociros.account_prompt`.
 
 ## Positioning vs. plan.md
 
@@ -92,6 +97,22 @@ Not in this repo: billed accounts, official CEFR or JLPT word lists, C1/C2, or l
 
 Do not add languages, audio, or SRS until there is signal this loop works:
 
-- Testers return for a second or third passage without prompting.
-- “Too hard” rate is low enough that CEFR labeling is credible.
+- Testers return for a second or third passage without prompting. Measured two ways: the second-text rate in `trial_metrics` (share of readers with two or more reads, gate 40%), and the funnel's return rates, the share of browsers that come back on a later UTC day within 2 and within 7 days of their first visit.
+- “Too hard” rate is low enough that CEFR labeling is credible (gate under 15%).
 - Unsolicited comments name the retained hook (comprehension confidence, click-gloss, topic novelty).
+
+### The landing funnel
+
+Retention here means the share of landing visitors who finish and rate a first passage, then come back on another day. `trial_metrics` includes a `funnel` block, shown on `/admin`, that follows every browser that viewed the landing page in the window:
+
+| Step | Event | Recorded by |
+|------|-------|-------------|
+| Viewed the landing page | `landing_view` | browser |
+| Tapped a word in the demo | `demo_tap` | browser |
+| Clicked Start reading (with which button) | `start_click` | browser |
+| Opened the placement read | `placement_start` | browser |
+| Finished placement | `placement_done` | API |
+| Rated a passage | `read_complete` | API |
+| Linked an account | `account_linked` | API |
+
+`session_start` is sent once per browser per UTC day and drives the 2-day and 7-day return rates. Events are keyed by the device id the app already sends, so there is no third-party tracker and no cookie banner. The API refuses the server-side kinds from the browser, so they cannot be inflated. Each step is judged against the landing views, not against the step before, so a change to the hero shows up in placement and return rates and not only in clicks.

@@ -36,25 +36,44 @@ function DemoToggle({
  * gloss components as /passage/[id]; nothing here is a mockup.
  * Mounted with key={lang} so switching language resets the selection.
  * From lg up the gloss floats off the sheet's lower edge instead of
- * pushing the passage around.
+ * pushing the passage around, unless `inlineGloss` keeps it in the flow
+ * (the landing hero, where a floating gloss would cover the next section).
  */
 export function ReaderDemo({
   lang,
   onLang,
+  languages,
+  showLanguages = true,
+  inlineGloss = false,
+  onFirstTap,
 }: {
   lang: LangCode;
-  onLang: (next: LangCode) => void;
+  onLang?: (next: LangCode) => void;
+  languages?: LangCode[];
+  showLanguages?: boolean;
+  inlineGloss?: boolean;
+  onFirstTap?: () => void;
 }) {
   const demo = DEMO[lang];
   const [selected, setSelected] = useState<number | null>(demo.initial);
   const [grammar, setGrammar] = useState(false);
   const [furigana, setFurigana] = useState(false);
   const [saved, setSaved] = useState<Set<string>>(new Set());
+  const [tapped, setTapped] = useState(false);
 
   const token = selected != null ? demo.tokens[selected] : null;
   const open = Boolean(token && token.is_word);
   const ja = lang === "ja";
   const ar = lang === "ar";
+  const options = LANGUAGES.filter((l) => !languages || languages.includes(l.id));
+
+  function select(index: number | null) {
+    setSelected(index);
+    if (index != null && !tapped) {
+      setTapped(true);
+      onFirstTap?.();
+    }
+  }
 
   return (
     <div className="relative">
@@ -64,15 +83,17 @@ export function ReaderDemo({
             <BandStrip level={demo.level} />
             <span className="t-eyebrow">{demo.genre}</span>
           </div>
-          <div className="self-start">
-            <Segmented
-              ariaLabel="Demo language"
-              size="sm"
-              options={LANGUAGES.map((l) => ({ id: l.id, label: l.label }))}
-              value={lang}
-              onChange={onLang}
-            />
-          </div>
+          {showLanguages && onLang && options.length > 1 ? (
+            <div className="self-start">
+              <Segmented
+                ariaLabel="Demo language"
+                size="sm"
+                options={options.map((l) => ({ id: l.id, label: l.label }))}
+                value={lang}
+                onChange={onLang}
+              />
+            </div>
+          ) : null}
         </div>
 
         <div className="px-5 pb-8 pt-6 sm:px-6">
@@ -104,7 +125,7 @@ export function ReaderDemo({
             tokens={demo.tokens}
             language={lang}
             selected={selected}
-            onSelect={setSelected}
+            onSelect={select}
             grammarColors={grammar}
             furigana={furigana}
             className="mt-6 text-[1.2rem] sm:text-[1.3rem]"
@@ -113,9 +134,13 @@ export function ReaderDemo({
       </div>
 
       <div
-        className={`sheet-float z-20 mt-3 px-5 py-4 lg:absolute lg:-right-12 lg:top-[calc(100%-1.75rem)] lg:mt-0 lg:max-h-[19rem] lg:w-[21rem] lg:overflow-y-auto ${
-          open ? "" : "lg:hidden"
-        }`}
+        className={
+          inlineGloss
+            ? "sheet-float relative z-20 mx-3 -mt-5 px-5 py-4 sm:ml-auto sm:mr-[-1.5rem] sm:w-[22rem]"
+            : `sheet-float z-20 mt-3 px-5 py-4 lg:absolute lg:-right-12 lg:top-[calc(100%-1.75rem)] lg:mt-0 lg:max-h-[19rem] lg:w-[21rem] lg:overflow-y-auto ${
+                open ? "" : "lg:hidden"
+              }`
+        }
         role="region"
         aria-label="Word gloss"
         aria-live="polite"

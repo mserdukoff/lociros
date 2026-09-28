@@ -63,6 +63,12 @@ export async function requestMagicLink(email: string): Promise<{ ok: boolean; li
   return res.json();
 }
 
+/** Move this browser's guest progress onto the signed-in account. */
+export async function attachGuest(): Promise<void> {
+  if (isDemo()) return;
+  await fetch("/api/auth/session", opts({ method: "POST", body: "{}" }, true)).catch(() => undefined);
+}
+
 export async function logout(): Promise<void> {
   if (isDemo()) return demoApi.logout();
   await fetch("/api/auth/logout", opts({ method: "POST" }));
@@ -113,6 +119,16 @@ export async function generatePassage(body: {
     return pollGenerateJob(job.job_id);
   }
   return res.json();
+}
+
+export async function fetchShelfCounts(): Promise<Partial<Record<LangCode, number>>> {
+  if (isDemo()) return demoApi.fetchShelfCounts();
+  const res = await fetch("/api/shelf/counts", opts());
+  if (!res.ok) {
+    throw new Error(await readError(res));
+  }
+  const data = (await res.json()) as { counts: Partial<Record<LangCode, number>> };
+  return data.counts;
 }
 
 export async function fetchLibrary(
@@ -282,12 +298,21 @@ export async function submitComprehension(passageId: string, answers: number[]) 
   return res.json() as Promise<{ ok: boolean; correct: number; total: number }>;
 }
 
-export async function recordEvent(kind: string, passageId?: string) {
-  if (isDemo()) return demoApi.recordEvent(kind, passageId);
-  await fetch("/api/events", opts({
+export type TrackKind =
+  | "landing_view"
+  | "demo_tap"
+  | "start_click"
+  | "placement_start"
+  | "session_start";
+
+/** Fire and forget. `keepalive` lets the request finish while a link navigates away. */
+export function track(kind: TrackKind, payload?: Record<string, string | number | boolean>) {
+  if (isDemo()) return;
+  void fetch("/api/events", opts({
     method: "POST",
-    body: JSON.stringify({ kind, passage_id: passageId ?? null }),
-  }, true));
+    keepalive: true,
+    body: JSON.stringify({ kind, payload: payload ?? null }),
+  }, true)).catch(() => undefined);
 }
 
 export async function fetchAdminOverview(): Promise<AdminOverview> {

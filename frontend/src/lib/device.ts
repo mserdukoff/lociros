@@ -20,6 +20,12 @@ export function loadLanguage(): LangCode {
   return value === "ru" || value === "ja" || value === "it" || value === "ar" ? value : "ja";
 }
 
+/** False until a language has been chosen on this browser, on the landing page or the placement read. */
+export function hasStoredLanguage(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.localStorage.getItem(LANG_KEY) !== null;
+}
+
 export function saveLanguage(language: LangCode): void {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(LANG_KEY, language);
@@ -71,6 +77,69 @@ export function loadFadeKnown(): boolean {
 export function saveFadeKnown(on: boolean): void {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(FADE_KEY, on ? "1" : "0");
+}
+
+const TAP_HINT_KEY = "lociros.tap_hint";
+const RATING_HINT_KEY = "lociros.rating_hint";
+const ACCOUNT_PROMPT_KEY = "lociros.account_prompt";
+
+/** Shown above the placement passage until the first word is tapped on this browser. */
+export function tapHintSeen(): boolean {
+  if (typeof window === "undefined") return true;
+  return window.localStorage.getItem(TAP_HINT_KEY) === "1";
+}
+
+export function markTapHintSeen(): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(TAP_HINT_KEY, "1");
+}
+
+/** Rendered as seen during hydration, so the hint only appears on the client. */
+export function useTapHintSeen(): boolean {
+  return useSyncExternalStore(subscribeStorage, tapHintSeen, () => true);
+}
+
+/** Shown under the rating pills until the reader rates a passage for the first time. */
+export function ratingHintSeen(): boolean {
+  if (typeof window === "undefined") return true;
+  return window.localStorage.getItem(RATING_HINT_KEY) === "1";
+}
+
+export function markRatingHintSeen(): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(RATING_HINT_KEY, "1");
+}
+
+export function useRatingHintSeen(): boolean {
+  return useSyncExternalStore(subscribeStorage, ratingHintSeen, () => true);
+}
+
+/**
+ * `pending` until the first offer is dismissed, then `once` (offered again
+ * after the third finished passage), then `done`. An account also sets `done`.
+ */
+export type AccountPrompt = "pending" | "once" | "done";
+
+export function loadAccountPrompt(): AccountPrompt {
+  if (typeof window === "undefined") return "done";
+  const value = window.localStorage.getItem(ACCOUNT_PROMPT_KEY);
+  return value === "once" || value === "done" ? value : "pending";
+}
+
+export function saveAccountPrompt(value: AccountPrompt): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(ACCOUNT_PROMPT_KEY, value);
+}
+
+const SESSION_DAY_KEY = "lociros.session_day";
+
+/** True the first time it is called on a UTC day, then false until the next day. */
+export function claimSessionDay(): boolean {
+  if (typeof window === "undefined") return false;
+  const today = new Date().toISOString().slice(0, 10);
+  if (window.localStorage.getItem(SESSION_DAY_KEY) === today) return false;
+  window.localStorage.setItem(SESSION_DAY_KEY, today);
+  return true;
 }
 
 export function deviceHeaders(json = false): HeadersInit {

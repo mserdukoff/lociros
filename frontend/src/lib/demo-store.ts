@@ -356,7 +356,8 @@ export function demoSubmitPlacement(language: LangCode, answers: number[]) {
   lang.consecutive_up = 0;
   lang.consecutive_down = 0;
   save(store);
-  return { language, level, correct, total: spec.answers.length, placed: true };
+  const next_id = pickNextId(language, level, new Set(lang.read), lang.taps);
+  return { language, level, correct, total: spec.answers.length, placed: true, next_id };
 }
 
 export function demoStarWord(body: {

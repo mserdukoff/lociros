@@ -74,12 +74,17 @@ from app.services.learner import (
     tokens_from_row,
     unstar_lemma,
 )
-from app.services.library import list_library
+from app.services.library import list_library, shelf_counts
 from app.services.news import save_news
 from app.services.morph import analyze_word
 from app.services.quota import consume_generate, remaining_generates
 from app.services.srs import due_cards, due_count, review_card
-from app.services.trial import record_event, trial_metrics
+from app.services.trial import (
+    SERVER_EVENTS,
+    record_account_linked,
+    record_event,
+    trial_metrics,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -205,6 +210,7 @@ def auth_session(
         raise HTTPException(status_code=401, detail="Sign in first.")
     if identity.device_id:
         merge_guest_into_user(db, identity.device_id, identity.user_id)
+        record_account_linked(db, identity)
     return {"ok": True, "user_id": identity.user_id}
 
 
@@ -317,6 +323,18 @@ def get_generate_job(
     if not job_owned_by(job, identity):
         raise HTTPException(status_code=404, detail="Generation job not found")
     return job_to_response(db, job)
+
+
+@router.get("/shelf/counts")
+def get_shelf_counts(db: Session = Depends(get_db)):
+    counts = shelf_counts(db)
+    shown = {
+        "ja": True,
+        "ru": settings.show_russian,
+        "it": settings.show_italian,
+        "ar": settings.show_arabic,
+    }
+    return {"counts": {lang: n for lang, n in counts.items() if shown.get(lang)}}
 
 
 @router.get("/library", response_model=LibraryResponse)
@@ -626,13 +644,28 @@ def post_placement(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     learner = get_or_create_learner(db, identity, body.language)
     set_placed_level(learner, level)
+    record_event(
+        db,
+        kind="placement_done",
+        identity=identity,
+        payload={"language": body.language, "level": level},
+        commit=False,
+    )
     db.commit()
+    next_id = pick_next_id(
+        db,
+        body.language,
+        level,
+        read_ids(db, identity),
+        tapped=set(recent_taps(db, identity, body.language)),
+    )
     return PlacementResult(
         language=body.language,
         level=level,  # type: ignore[arg-type]
         correct=correct,
         total=total,
         placed=True,
+        next_id=next_id,
     )
 
 
@@ -695,6 +728,10 @@ def post_event(
     db: Session = Depends(get_db),
     identity: Identity = Depends(get_identity),
 ):
+    if body.kind in SERVER_EVENTS:
+        raise HTTPException(status_code=400, detail="That event is recorded by the server.")
+    if body.kind == "session_start" and not identity.device_id:
+        return {"ok": True}
     record_event(
         db,
         kind=body.kind,

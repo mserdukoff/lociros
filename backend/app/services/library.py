@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import time
+
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.models.db import SHELF_PUBLIC, PassageRow
@@ -18,6 +21,36 @@ from app.services.learner import (
     tokens_from_row,
 )
 from app.services.news import news_notice, saved_news_ids
+
+
+_COUNTS_TTL = 600.0
+_counts_cache: tuple[float, dict[str, int]] | None = None
+
+
+def shelf_counts(db: Session) -> dict[str, int]:
+    """Passages a reader can open from the shelf, by language. News is left out.
+
+    The landing page reads this on every visit, and calibration is stored per row,
+    so the result is kept in-process for ten minutes.
+    """
+    global _counts_cache
+    now = time.monotonic()
+    if _counts_cache is not None and now - _counts_cache[0] < _COUNTS_TTL:
+        return dict(_counts_cache[1])
+    rows = (
+        db.query(PassageRow)
+        .filter(
+            PassageRow.shelf_status == SHELF_PUBLIC,
+            or_(PassageRow.genre.is_(None), PassageRow.genre != "news"),
+        )
+        .all()
+    )
+    counts: dict[str, int] = {}
+    for row in rows:
+        if row.language and calibration_passed(row):
+            counts[row.language] = counts.get(row.language, 0) + 1
+    _counts_cache = (now, counts)
+    return dict(counts)
 
 
 def list_library(

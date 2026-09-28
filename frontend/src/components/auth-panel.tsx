@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { logout } from "@/lib/api";
+import { saveAccountPrompt } from "@/lib/device";
 import { createClient } from "@/lib/supabase/client";
 import { isSupabaseAuth } from "@/lib/supabase/env";
 import type { MeResponse } from "@/lib/types";
@@ -22,28 +23,40 @@ function authError(err: unknown): string {
   if (text.includes("already registered") || text.includes("already been registered")) {
     return "That email already has an account. Sign in instead.";
   }
-  if (text.includes("password")) return raw;
   return raw;
 }
 
+type Mode = "signup" | "signin";
+
+/**
+ * `hero` is the landing page sheet, `shelf` a collapsed row on the library,
+ * `inline` the offer under a reader's first rating.
+ */
 export function AuthPanel({
   me,
   onRefresh,
   nextPath = "/library",
   layout = "shelf",
   redirectOnSuccess = false,
+  initialMode = "signup",
+  onSignedIn,
+  onCancel,
 }: {
   me: MeResponse | null;
   onRefresh: () => void;
   nextPath?: string;
-  layout?: "shelf" | "hero";
+  layout?: "shelf" | "hero" | "inline";
   redirectOnSuccess?: boolean;
+  initialMode?: Mode;
+  onSignedIn?: () => void | Promise<void>;
+  onCancel?: () => void;
 }) {
   const router = useRouter();
-  const [mode, setMode] = useState<"signup" | "signin">("signup");
+  const [mode, setMode] = useState<Mode>(initialMode);
+  const [open, setOpen] = useState(layout !== "shelf");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
+  const [reveal, setReveal] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -53,6 +66,7 @@ export function AuthPanel({
   }
 
   if (me?.authenticated) {
+    if (layout === "inline") return null;
     if (layout === "hero") {
       return (
         <div id="account" className="mt-10 max-w-[22rem]">
@@ -96,15 +110,27 @@ export function AuthPanel({
     );
   }
 
+  if (layout === "shelf" && !open) {
+    return (
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2 border-y border-rule py-3 text-sm text-ink/55">
+        <p>This shelf is on this browser.</p>
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="t-quiet underline decoration-ink/20 underline-offset-4"
+        >
+          Sign in or create an account
+        </button>
+      </div>
+    );
+  }
+
   async function submit() {
     setBusy(true);
     setMessage(null);
     try {
       if (!isSupabaseAuth()) {
         throw new Error("Accounts are not configured in this environment.");
-      }
-      if (mode === "signup" && password !== confirm) {
-        throw new Error("Passwords do not match.");
       }
       if (password.length < 8) {
         throw new Error("Use at least 8 characters.");
@@ -122,6 +148,8 @@ export function AuthPanel({
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
       }
+      saveAccountPrompt("done");
+      await onSignedIn?.();
       onRefresh();
       if (redirectOnSuccess) router.push(nextPath);
     } catch (err) {
@@ -131,72 +159,95 @@ export function AuthPanel({
     }
   }
 
-  const heading = mode === "signup" ? "Create an account" : "Sign in";
+  const heading =
+    layout === "inline"
+      ? mode === "signup"
+        ? "Keep this shelf"
+        : "Sign in"
+      : mode === "signup"
+        ? "Create an account"
+        : "Sign in";
   const action = mode === "signup" ? "Create account" : "Sign in";
+  const lede =
+    layout === "inline"
+      ? "Email and a password. You stay on this passage."
+      : "An email and a password. Progress stays with the account.";
   const wrap =
     layout === "hero"
       ? "mt-10 max-w-[22rem] scroll-mt-10"
-      : "flex flex-col gap-3 border-y border-rule py-5";
+      : layout === "inline"
+        ? "flex max-w-[22rem] flex-col"
+        : "flex flex-col gap-3 border-y border-rule py-5";
 
   return (
     <form
-      id="account"
+      id={layout === "inline" ? undefined : "account"}
       className={wrap}
       onSubmit={async (e) => {
         e.preventDefault();
         await submit();
       }}
     >
-      {layout === "hero" ? (
-        <h2 className="font-display text-[1.35rem] text-ink">{heading}</h2>
-      ) : (
+      {layout === "shelf" ? (
         <p className="text-sm text-ink/55">
           {mode === "signup"
             ? "Create an account to keep progress across devices"
             : "Sign in to keep progress across devices"}
           {me?.require_auth ? " and to restock custom texts." : "."}
         </p>
+      ) : (
+        <>
+          <h2 className="font-display text-[1.35rem] text-ink">{heading}</h2>
+          <p className="mt-2 text-sm leading-relaxed text-ink/55">{lede}</p>
+        </>
       )}
-      {layout === "hero" ? (
-        <p className="mt-2 text-sm leading-relaxed text-ink/55">
-          An email and a password. Progress stays with the account.
-        </p>
-      ) : null}
-      <div className={layout === "hero" ? "mt-5 flex flex-col gap-3" : "flex flex-col gap-3"}>
+      <div className={layout === "shelf" ? "flex flex-col gap-3" : "mt-5 flex flex-col gap-3"}>
         <input
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="you@example.com"
+          aria-label="Email"
           autoComplete="email"
           required
           className="field-line text-sm!"
         />
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="Password"
-          autoComplete={mode === "signup" ? "new-password" : "current-password"}
-          minLength={8}
-          required
-          className="field-line text-sm!"
-        />
-        {mode === "signup" ? (
+        <div className="relative">
           <input
-            type="password"
-            value={confirm}
-            onChange={(e) => setConfirm(e.target.value)}
-            placeholder="Confirm password"
-            autoComplete="new-password"
-            minLength={8}
+            type={reveal ? "text" : "password"}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Password"
+            aria-label="Password"
+            autoComplete={mode === "signup" ? "new-password" : "current-password"}
             required
-            className="field-line text-sm!"
+            className="field-line w-full pr-14 text-sm!"
           />
-        ) : null}
-        <button type="submit" disabled={busy} className="btn-primary mt-1 h-11 w-full text-[15px]">
-          {busy ? "One moment…" : action}
-        </button>
+          <button
+            type="button"
+            onClick={() => setReveal((v) => !v)}
+            aria-pressed={reveal}
+            className="t-quiet absolute right-0 top-1/2 -translate-y-1/2 text-[12px]!"
+          >
+            {reveal ? "Hide" : "Show"}
+          </button>
+        </div>
+        {layout === "inline" ? (
+          <div className="mt-2 flex items-center gap-6">
+            <button type="submit" disabled={busy} className="btn-primary h-11 px-6 text-[15px]">
+              {busy ? "One moment…" : action}
+            </button>
+            {onCancel ? (
+              <button type="button" disabled={busy} onClick={onCancel} className="t-quiet">
+                Not now
+              </button>
+            ) : null}
+          </div>
+        ) : (
+          <button type="submit" disabled={busy} className="btn-primary mt-1 h-11 w-full text-[15px]">
+            {busy ? "One moment…" : action}
+          </button>
+        )}
       </div>
       <button
         type="button"

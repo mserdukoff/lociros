@@ -1,27 +1,92 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BandStrip } from "@/components/band";
 import { GlossCard } from "@/components/gloss-card";
 import { Art } from "@/components/landing/art";
 import { GrammarLegend, PassageArticle } from "@/components/passage-article";
 import { ReaderRail } from "@/components/reader-rail";
 import { Seal } from "@/components/seal";
-import { fetchLibrary, fetchPassageStats, fetchTranslation, recordTap, sendFeedback, starWord, submitComprehension, unstarWord } from "@/lib/api";
+import { AuthPanel } from "@/components/auth-panel";
 import {
+  attachGuest,
+  fetchLibrary,
+  fetchMe,
+  fetchPassageStats,
+  fetchTranslation,
+  recordTap,
+  sendFeedback,
+  starWord,
+  submitComprehension,
+  unstarWord,
+} from "@/lib/api";
+import { isDemo } from "@/lib/demo";
+import {
+  loadAccountPrompt,
   loadFadeKnown,
   loadFurigana,
   loadGrammarColors,
+  markRatingHintSeen,
+  saveAccountPrompt,
   saveFadeKnown,
   saveFurigana,
   saveGrammarColors,
+  useRatingHintSeen,
 } from "@/lib/device";
 import { sentenceEnglish, tokenSentenceIndex } from "@/lib/sentences";
-import type { FeedbackRating, Passage, PassageStats } from "@/lib/types";
+import { isSupabaseAuth } from "@/lib/supabase/env";
+import type { FeedbackRating, MeResponse, Passage, PassageStats } from "@/lib/types";
 import { readingFont } from "@/lib/types";
 
 const LANG_NAME = { ja: "Japanese", ru: "Russian", it: "Italian", ar: "Arabic" } as const;
+
+/** The account offer returns once, after this many finished passages. */
+const SECOND_OFFER_AT = 3;
+
+function AccountOffer({
+  me,
+  onRefresh,
+  onSignedIn,
+}: {
+  me: MeResponse | null;
+  onRefresh: () => void;
+  onSignedIn: () => Promise<string>;
+}) {
+  const [form, setForm] = useState(false);
+  const [done, setDone] = useState<string | null>(null);
+  const [dismissed, setDismissed] = useState(false);
+
+  if (done) return <p className="mt-4 text-[13px] text-ink/70">{done}</p>;
+  if (dismissed || me?.authenticated) return null;
+  if (!form) {
+    return (
+      <p className="mt-4 flex flex-wrap items-baseline gap-x-4 gap-y-1 text-[13px] text-ink/55">
+        <span>This stays on this browser.</span>
+        <button
+          type="button"
+          onClick={() => setForm(true)}
+          className="text-ink underline decoration-ink/30 underline-offset-4"
+        >
+          Create an account to keep it
+        </button>
+      </p>
+    );
+  }
+  return (
+    <div className="mt-6 border-t border-rule pt-6">
+      <AuthPanel
+        me={me}
+        layout="inline"
+        onRefresh={onRefresh}
+        onCancel={() => setDismissed(true)}
+        onSignedIn={async () => {
+          setDone(await onSignedIn());
+        }}
+      />
+    </div>
+  );
+}
 
 function Toggle({
   on,
@@ -218,6 +283,10 @@ export function Reader({ passage }: { passage: Passage }) {
   const [audioSentence, setAudioSentence] = useState<number | null>(null);
   const [passportOpen, setPassportOpen] = useState(false);
   const [shelfIds, setShelfIds] = useState<string[]>([]);
+  const [readIds, setReadIds] = useState<Set<string>>(new Set());
+  const [me, setMe] = useState<MeResponse | null>(null);
+  const ratingHintDone = useRatingHintSeen();
+  const [offerAccount, setOfferAccount] = useState(false);
   const questions = passage.comprehension ?? [];
   const [picks, setPicks] = useState<number[]>(() => questions.map(() => -1));
   const [compDone, setCompDone] = useState(questions.length === 0);
@@ -262,12 +331,26 @@ export function Reader({ passage }: { passage: Passage }) {
   useEffect(() => {
     const ac = new AbortController();
     fetchLibrary(passage.language, ac.signal)
-      .then((lib) => setShelfIds(lib.items.map((item) => item.id)))
+      .then((lib) => {
+        setShelfIds(lib.items.map((item) => item.id));
+        setReadIds(new Set(lib.items.filter((item) => item.read).map((item) => item.id)));
+      })
       .catch(() => {
         /* the pager falls back to the recommended next passage */
       });
     return () => ac.abort();
   }, [passage.language]);
+
+  const refreshMe = useCallback(() => {
+    if (isDemo()) return;
+    void fetchMe()
+      .then(setMe)
+      .catch(() => setMe(null));
+  }, []);
+
+  useEffect(() => {
+    refreshMe();
+  }, [refreshMe]);
 
   useEffect(() => {
     setShowEnglish(false);
@@ -279,6 +362,7 @@ export function Reader({ passage }: { passage: Passage }) {
     setSelected(null);
     setFeedback(null);
     setPassportOpen(false);
+    setOfferAccount(false);
   }, [passage.id, passage.translation]);
 
   async function onFeedback(rating: FeedbackRating) {
@@ -287,6 +371,8 @@ export function Reader({ passage }: { passage: Passage }) {
     try {
       const result = await sendFeedback(passage.id, rating);
       setFeedback(rating);
+      markRatingHintSeen();
+      maybeOfferAccount(new Set(readIds).add(passage.id).size);
       if (result.next_id) setNextId(result.next_id);
       if (result.placement) setPlacement(result.placement);
       setStats((prev) =>
@@ -307,6 +393,38 @@ export function Reader({ passage }: { passage: Passage }) {
     } finally {
       setSending(false);
     }
+  }
+
+  /** Showing the offer spends it; creating an account also sets it to done. */
+  function maybeOfferAccount(finished: number) {
+    if (isDemo() || !isSupabaseAuth() || me?.authenticated) return;
+    const prompt = loadAccountPrompt();
+    if (prompt === "pending") {
+      saveAccountPrompt("once");
+    } else if (prompt === "once" && finished >= SECOND_OFFER_AT) {
+      saveAccountPrompt("done");
+    } else {
+      return;
+    }
+    setOfferAccount(true);
+  }
+
+  async function afterSignIn(): Promise<string> {
+    const before = placement;
+    await attachGuest();
+    const name = LANG_NAME[passage.language];
+    try {
+      const data = await fetchPassageStats(passage.id);
+      setStats(data);
+      setPlacement(data.placement);
+      setStarred(new Set(data.starred_lemmas ?? []));
+      if (before && data.placement !== before) {
+        return `This account's ${name} is at ${data.placement}.`;
+      }
+    } catch {
+      /* the account still has this browser's rows */
+    }
+    return `This browser's ${name} is on the account.`;
   }
 
   async function onCheck() {
@@ -658,6 +776,11 @@ export function Reader({ passage }: { passage: Passage }) {
               ))}
             </div>
           </div>
+          {!ratingHintDone && !feedback ? (
+            <p className="mt-3 text-[13px] leading-relaxed text-ink/70">
+              Too easy and too hard move the band after three in a row. Just right keeps it.
+            </p>
+          ) : null}
           {feedbackError ? <p className="mt-3 text-xs text-terracotta">{feedbackError}</p> : null}
           {feedback && !feedbackError ? (
             <p className="mt-3 flex items-baseline justify-between gap-3 text-[13px] text-ink/55">
@@ -675,6 +798,9 @@ export function Reader({ passage }: { passage: Passage }) {
                 </Link>
               ) : null}
             </p>
+          ) : null}
+          {feedback && !feedbackError && offerAccount ? (
+            <AccountOffer me={me} onRefresh={refreshMe} onSignedIn={afterSignIn} />
           ) : null}
         </section>
       ) : null}

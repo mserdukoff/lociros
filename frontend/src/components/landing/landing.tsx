@@ -5,13 +5,28 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { AuthPanel, signOutAccount } from "@/components/auth-panel";
+import { ContinueCard } from "@/components/continue-card";
 import { DemoBanner } from "@/components/demo-banner";
 import { LogoMark } from "@/components/logo";
 import { Segmented } from "@/components/segmented";
-import { fetchMe } from "@/lib/api";
+import { fetchLibrary, fetchMe, fetchShelfCounts, track } from "@/lib/api";
 import { isDemo } from "@/lib/demo";
-import { saveLanguage } from "@/lib/device";
-import { LANGUAGES, readingFont, type LangCode, type MeResponse } from "@/lib/types";
+import {
+  getDeviceId,
+  hasStoredLanguage,
+  loadLanguage,
+  saveLanguage,
+  useStoredLanguage,
+} from "@/lib/device";
+import {
+  LANGUAGES,
+  enabledLanguages,
+  readingFont,
+  type CefrLevel,
+  type LangCode,
+  type LibraryItem,
+  type MeResponse,
+} from "@/lib/types";
 import { Art, HandArrow, HandNote, LineIcon } from "./art";
 import { DEMO } from "./demo-data";
 import { Drift } from "./drift";
@@ -19,11 +34,14 @@ import { DrawnArrow, Float, InkArt, Parallax, Reveal, Stagger, StaggerItem } fro
 import { PromptHero } from "./prompt-hero";
 import { ReaderDemo } from "./reader-demo";
 import { SCENES } from "./scenes";
+import { STICKY_TEST, StickyStart, stickyArm } from "./sticky-start";
 import { Story, type StoryStep } from "./story";
 
 const ShaderWash = dynamic(() => import("./shader-wash"), { ssr: false });
 
 export type LandingVariant = "classic" | "motion" | "prompt" | "story" | "shader";
+
+type StartFrom = "nav" | "hero" | "rate" | "close" | "sticky";
 
 function Plain({ children }: { children: React.ReactNode; className?: string }) {
   return <>{children}</>;
@@ -34,6 +52,13 @@ const KEPT_OUT: Record<LangCode, string> = {
   ru: "At A2, nominative, accusative, genitive, prepositional, and dative are allowed, in present, past, and future. Instrumental, participles, and который are kept out.",
   it: "At A2, the present, passato prossimo, and the simple future are allowed. Imperfetto, the conditional, the subjunctive, the gerund, and the remote past are kept out.",
   ar: "At A2, present, past, and future are allowed, including common Form II and Form IV verbs. The dual, إنّ, the relative الذي, and the passive are kept out.",
+};
+
+const ANALYZER: Record<LangCode, string> = {
+  ja: "Sudachi",
+  ru: "pymorphy3",
+  it: "spaCy",
+  ar: "CAMeL Tools",
 };
 
 type Row = { k: string; v: string; icon: string };
@@ -49,6 +74,7 @@ const ENGLISH: Row = {
   icon: "letter",
 };
 
+// Only the story variant still has a tap step; the default page shows the tap in the hero.
 const TAP: Record<LangCode, Row[]> = {
   ja: [
     { k: "Reading", v: "Hiragana beside the word you tapped.", icon: "book" },
@@ -148,13 +174,14 @@ function RateDemo({ lang }: { lang: LangCode }) {
     <div className="flex flex-col items-center">
       <div className="relative flex h-[11rem] w-full max-w-[24rem] items-end justify-center">
         <div className="sheet absolute bottom-3 left-2 w-[9rem] -rotate-[7deg] p-2.5 sm:left-0">
-          <Art src={`thumb-${lang}-2`} className="aspect-[4/3] w-full rounded-[6px] object-cover" />
+          <Art src={`thumb-${lang}-2`} sizes="144px" className="aspect-[4/3] w-full rounded-[6px] object-cover" />
           <span className="mt-2 block h-1 w-12 rounded-full bg-ink/10" />
           <span className="mt-1 block h-1 w-8 rounded-full bg-ink/10" />
         </div>
         <div className="sheet absolute bottom-3 right-2 w-[9rem] rotate-[7deg] p-2.5 sm:right-0">
           <Art
             src={`vista-${lang}`}
+            sizes="144px"
             className="aspect-[4/3] w-full rounded-[6px] bg-paper object-cover object-right"
           />
           <span className="mt-2 block h-1 w-12 rounded-full bg-ink/10" />
@@ -167,7 +194,7 @@ function RateDemo({ lang }: { lang: LangCode }) {
           >
             {demo.title}
           </p>
-          <Art src={`thumb-${lang}-1`} className="mt-2 aspect-[4/3] w-full rounded-[6px] object-cover" />
+          <Art src={`thumb-${lang}-1`} sizes="160px" className="mt-2 aspect-[4/3] w-full rounded-[6px] object-cover" />
           <p className="mt-2 font-display text-[11px] tracking-[0.12em] text-ink/45">{demo.level}</p>
         </div>
       </div>
@@ -199,21 +226,132 @@ function RateDemo({ lang }: { lang: LangCode }) {
   );
 }
 
+/** The cliff, with the four levels carved into it. */
+function Cliff({ lang, language, anim }: { lang: LangCode; language: string; anim: boolean }) {
+  const scene = SCENES[lang];
+  return (
+    <figure className="relative">
+      {anim ? (
+        <Parallax distance={40}>
+          <InkArt
+            key={lang}
+            src={`cliff-${lang}`}
+            sizes="(min-width: 1024px) 45vw, 95vw"
+            className="cliff-fade aspect-[4/3] w-full"
+            delay={0.1}
+          />
+        </Parallax>
+      ) : (
+        <Art
+          key={lang}
+          src={`cliff-${lang}`}
+          sizes="(min-width: 1024px) 45vw, 95vw"
+          className="cliff-fade aspect-[4/3] w-full"
+        />
+      )}
+      <div aria-hidden="true" className="absolute inset-0 hidden sm:block">
+        {scene.strata.map((s, i) => {
+          const label = (
+            <>
+              <span className="rounded-[4px] bg-paper/85 px-1.5 py-0.5 leading-tight">
+                <span className="block font-display text-[13px] text-ink">{s.level}</span>
+                <span className="block whitespace-nowrap text-[10.5px] tracking-[0.02em] text-ink/50">
+                  {s.label}
+                </span>
+              </span>
+              <span className="h-px w-5 bg-ink/35" />
+            </>
+          );
+          const style = { top: s.top, right: `calc(100% - ${scene.face} + 0.75rem)` };
+          const cls = "absolute flex -translate-y-1/2 items-center gap-2.5 text-right";
+          return anim ? (
+            <Float key={`${lang}-${s.level}`} className={cls} style={style} delay={0.5 + i * 0.15}>
+              {label}
+            </Float>
+          ) : (
+            <div key={s.level} style={style} className={cls}>
+              {label}
+            </div>
+          );
+        })}
+      </div>
+      <figcaption className="sr-only">
+        A cliff of carved {language} words, from everyday greetings at the top to older writing at
+        the base.
+      </figcaption>
+    </figure>
+  );
+}
+
+type Returning = { item: LibraryItem; level: CefrLevel; language: LangCode };
+
+/**
+ * The three.js wash is decoration, so it waits until the page is idle and is
+ * skipped on small screens, for reduced motion, and when the browser asks to
+ * save data. The flat paper background stands in for it.
+ */
+function useIdleWash(enabled: boolean): boolean {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    if (!enabled) return;
+    const wide = window.matchMedia("(min-width: 1024px)").matches;
+    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const saveData = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection
+      ?.saveData;
+    if (!wide || still || saveData) return;
+    let idle: number | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const start = () => {
+      if ("requestIdleCallback" in window) {
+        idle = window.requestIdleCallback(() => setReady(true), { timeout: 4000 });
+      } else {
+        timer = setTimeout(() => setReady(true), 1500);
+      }
+    };
+    if (document.readyState === "complete") start();
+    else window.addEventListener("load", start, { once: true });
+    return () => {
+      window.removeEventListener("load", start);
+      if (idle !== undefined) window.cancelIdleCallback(idle);
+      if (timer !== undefined) clearTimeout(timer);
+    };
+  }, [enabled]);
+  return ready;
+}
+
 export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
   const anim = variant !== "classic";
-  const Col = anim ? Stagger : "div";
-  const Item = anim ? StaggerItem : Plain;
+  // The staggered entrance server-renders the headline at opacity 0 until
+  // hydration, which made it the late LCP element. `/` paints it at once.
+  const heroEntrance = anim && variant !== "shader";
+  const Col = heroEntrance ? Stagger : "div";
+  const Item = heroEntrance ? StaggerItem : Plain;
   const Arrow = anim ? DrawnArrow : HandArrow;
   const Section = anim ? Reveal : Fragment;
-  const [lang, setLang] = useState<LangCode>("ja");
+  const stored = useStoredLanguage();
+  const [picked, setLang] = useState<LangCode | null>(null);
   const [me, setMe] = useState<MeResponse | null>(null);
+  const [counts, setCounts] = useState<Partial<Record<LangCode, number>>>({});
+  const [returning, setReturning] = useState<Returning | null>(null);
+  const [meLoaded, setMeLoaded] = useState(false);
+  const langs = enabledLanguages(me).map((l) => l.id);
+  // Until /api/me answers, trust the stored language instead of flashing Japanese.
+  const enabled = meLoaded ? langs : null;
+  const wanted = picked ?? stored;
+  const lang = !meLoaded || langs.includes(wanted) ? wanted : "ja";
   const language = LANGUAGES.find((item) => item.id === lang)?.label ?? "Japanese";
   const level = DEMO[lang].level;
   const article = /^[aeiou]/i.test(language) ? "An" : "A";
   const scene = SCENES[lang];
   const demo = isDemo();
   const signedIn = Boolean(me?.authenticated);
-  const startHref = demo || signedIn ? "/library" : "#account";
+  const wash = useIdleWash(variant === "shader");
+  const count = counts[lang] ?? 0;
+  const languageList = LANGUAGES.filter((l) => langs.includes(l.id)).map((l) => l.label);
+  const languagesText =
+    languageList.length > 1
+      ? `${languageList.slice(0, -1).join(", ")}${languageList.length > 2 ? "," : ""} and ${languageList.at(-1)}`
+      : languageList[0];
 
   const storySteps: StoryStep[] = [
     {
@@ -228,7 +366,7 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
       ),
       visual: (
         <div className="relative isolate mx-auto max-w-[34rem]">
-          <ReaderDemo key={lang} lang={lang} onLang={chooseLang} />
+          <ReaderDemo key={lang} lang={lang} onLang={chooseLang} languages={langs} />
         </div>
       ),
     },
@@ -271,7 +409,7 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
               </div>
             ))}
           </dl>
-          <InkArt key={lang} src={`stone-${lang}`} className="w-full" />
+          <InkArt key={lang} src={`stone-${lang}`} sizes="256px" className="w-full" />
         </div>
       ),
     },
@@ -281,8 +419,8 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
       title: "Rate, and move forward.",
       body: (
         <p>
-          Levels run from A1 through B2. You begin at A2. The shelf remembers the lemmas you have
-          seen, and the next passage is chosen from that.
+          Levels run from A1 through B2. One short read sets where you start. The shelf remembers
+          the lemmas you have seen, and the next passage is chosen from that.
         </p>
       ),
       visual: <RateDemo key={lang} lang={lang} />,
@@ -294,21 +432,67 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
     saveLanguage(next);
   }
 
+  function start(from: StartFrom) {
+    saveLanguage(lang);
+    track("start_click", { from, language: lang, returning: Boolean(returning) });
+  }
+
   const refreshMe = useCallback(() => {
-    if (isDemo()) return;
     void fetchMe()
       .then(setMe)
-      .catch(() => setMe(null));
+      .catch(() => setMe(null))
+      .finally(() => setMeLoaded(true));
   }, []);
 
   useEffect(() => {
     refreshMe();
   }, [refreshMe]);
 
+  useEffect(() => {
+    track("landing_view", {
+      variant,
+      ...(STICKY_TEST ? { sticky_arm: stickyArm(getDeviceId()) } : {}),
+    });
+  }, [variant]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchShelfCounts()
+      .then((next) => {
+        if (!cancelled) setCounts(next);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // A reader with a band on this browser, or an account, gets their next
+  // passage in the hero. `/` itself never redirects.
+  useEffect(() => {
+    if (!hasStoredLanguage() && !signedIn) return;
+    const saved = loadLanguage();
+    let cancelled = false;
+    void fetchLibrary(saved)
+      .then((library) => {
+        if (cancelled || !library.placed) return;
+        const item = library.items.find((it) => it.id === library.next_id);
+        if (item) setReturning({ item, level: library.placement, language: saved });
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [signedIn]);
+
+  const returningName = returning
+    ? LANGUAGES.find((l) => l.id === returning.language)?.label
+    : null;
+
   return (
     <MotionConfig reducedMotion="user">
     <main className="relative overflow-x-clip">
-      {variant === "shader" ? (
+      {variant === "shader" && wash ? (
         <div aria-hidden="true" className="pointer-events-none fixed inset-0">
           <ShaderWash lang={lang} className="h-full w-full" />
         </div>
@@ -326,9 +510,6 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
             <a href="#check" className="t-quiet hidden underline-offset-[6px] hover:underline md:inline">
               The check
             </a>
-            <a href="#tap" className="t-quiet hidden underline-offset-[6px] hover:underline md:inline">
-              A tap
-            </a>
             <a href="#shelf" className="t-quiet hidden underline-offset-[6px] hover:underline md:inline">
               The shelf
             </a>
@@ -345,8 +526,13 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
                 Sign in
               </a>
             ) : null}
-            <Link href={startHref} className="btn-primary h-10! px-5! text-[14px]!">
-              {signedIn ? "Your shelf" : "Get started"}
+            <Link
+              href="/library"
+              data-start
+              onClick={() => start("nav")}
+              className="btn-primary h-10! px-5! text-[14px]!"
+            >
+              {signedIn || returning ? "Your shelf" : "Start reading"}
             </Link>
           </nav>
         </header>
@@ -356,42 +542,50 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
         {variant === "prompt" ? (
           <PromptHero lang={lang} onLang={chooseLang} />
         ) : (
-          <section className="relative grid items-center gap-10 pb-14 pt-8 lg:grid-cols-12 lg:gap-6 lg:pb-16 lg:pt-6">
-            <Col className="relative z-10 lg:col-span-5 lg:pb-10">
+          <section className="relative grid items-start gap-10 pb-16 pt-6 lg:grid-cols-12 lg:gap-8 lg:pb-20 lg:pt-8">
+            <Col className="relative z-10 lg:col-span-5 lg:pt-6">
               <Item>
-                <p className="t-eyebrow max-w-[16rem] leading-[1.6]!">
-                  Real language progress, one story at a time.
-                </p>
+                <p className="t-eyebrow">Every word has depth.</p>
               </Item>
               <Item>
-                <h1 className="t-display mt-5 text-[3rem] text-ink sm:text-[3.75rem] lg:text-[4.25rem]">
-                  Every word has depth.
+                <h1 className="t-display mt-5 text-[2.6rem] text-ink sm:text-[3.25rem] lg:text-[3.6rem]">
+                  Graded readers where A2 is actually A2.
                 </h1>
               </Item>
               <Item>
-                <p className="mt-6 min-h-[5.3rem] max-w-[27rem] text-[1.0625rem] leading-[1.65] text-ink/70">
-                  {scene.lede}
+                <p className="mt-6 max-w-[27rem] text-[1.0625rem] leading-[1.65] text-ink/70">
+                  Short passages from A1 to B2. A morphological analyzer checks every word against
+                  the level before you see it. Tap any word for its meaning and grammar.
                 </p>
               </Item>
               <Item>
-                <div className="mt-7">
-                  <Segmented
-                    animated={anim}
-                    ariaLabel="Language"
-                    size="sm"
-                    options={LANGUAGES.map((l) => ({ id: l.id, label: l.label }))}
-                    value={lang}
-                    onChange={chooseLang}
-                  />
+                <div className="mt-7 flex min-h-[2.25rem] items-center">
+                  {enabled && enabled.length > 1 ? (
+                    <Segmented
+                      animated={anim}
+                      ariaLabel="Language"
+                      size="sm"
+                      options={LANGUAGES.filter((l) => enabled.includes(l.id)).map((l) => ({
+                        id: l.id,
+                        label: l.label,
+                      }))}
+                      value={lang}
+                      onChange={chooseLang}
+                    />
+                  ) : enabled ? (
+                    <p className="text-[14px] text-ink/55">{language}, from A1 to B2.</p>
+                  ) : null}
                 </div>
               </Item>
               <Item>
-                <div className="mt-7 flex flex-wrap items-center gap-x-7 gap-y-4">
-                  <Link href="/library" className="btn-primary px-7">
-                    Start reading
-                  </Link>
-                  <a href="#read" className="t-quiet text-[14px]">
-                    See how it works ↓
+                <div className="mt-7 flex min-h-12 flex-wrap items-center gap-x-7 gap-y-4">
+                  {returning ? null : (
+                    <Link href="/library" data-start onClick={() => start("hero")} className="btn-primary px-7">
+                      Start reading
+                    </Link>
+                  )}
+                  <a href="#check" className="t-quiet text-[14px]">
+                    How the check works ↓
                   </a>
                 </div>
               </Item>
@@ -402,303 +596,173 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
               ) : null}
             </Col>
 
-            <figure className="relative lg:col-span-7 lg:-mr-10 xl:-mr-20 2xl:-ml-6 2xl:-mr-36">
-              {anim ? (
-                <Parallax distance={50}>
-                  <InkArt key={lang} src={`cliff-${lang}`} className="cliff-fade aspect-[4/3] w-full" delay={0.2} />
-                </Parallax>
+            <div className="relative isolate lg:col-span-7 lg:pl-6 xl:pl-10">
+              {returning ? (
+                <div data-start className="flex max-w-[34rem] flex-col gap-3">
+                  <Eyebrow>Continue</Eyebrow>
+                  <ContinueCard item={returning.item} />
+                  <p className="text-[13px] text-ink/50">
+                    Your {returningName} is at {returning.level}.{" "}
+                    <Link href="/library" className="underline decoration-ink/25 underline-offset-4 hover:text-ink">
+                      Open the shelf
+                    </Link>
+                  </p>
+                </div>
               ) : (
-                <Art key={lang} src={`cliff-${lang}`} className="cliff-fade aspect-[4/3] w-full" />
+                <div className="max-w-[36rem]">
+                  <ReaderDemo
+                    key={lang}
+                    lang={lang}
+                    showLanguages={false}
+                    inlineGloss
+                    onFirstTap={() => track("demo_tap", { language: lang })}
+                  />
+                </div>
               )}
-              <div aria-hidden="true" className="absolute inset-0 hidden lg:block">
-                {scene.strata.map((s, i) => {
-                  const label = (
-                    <>
-                      <span className="rounded-[4px] bg-paper/85 px-1.5 py-0.5 leading-tight">
-                        <span className="block font-display text-[13px] text-ink">{s.level}</span>
-                        <span className="block whitespace-nowrap text-[10.5px] tracking-[0.02em] text-ink/50">
-                          {s.label}
-                        </span>
-                      </span>
-                      <span className="h-px w-5 bg-ink/35" />
-                    </>
-                  );
-                  const style = { top: s.top, right: `calc(100% - ${scene.face} + 0.75rem)` };
-                  const cls = "absolute flex -translate-y-1/2 items-center gap-2.5 text-right";
-                  return anim ? (
-                    <Float key={`${lang}-${s.level}`} className={cls} style={style} delay={0.7 + i * 0.15}>
-                      {label}
-                    </Float>
-                  ) : (
-                    <div key={s.level} style={style} className={cls}>
-                      {label}
-                    </div>
-                  );
-                })}
-              </div>
-              <figcaption className="sr-only">
-                A cliff of carved {language} words, from everyday greetings at the top to older
-                writing at the base.
-              </figcaption>
-            </figure>
+            </div>
           </section>
         )}
       </Wrap>
 
-      {variant === "story" ? <Story steps={storySteps} /> : null}
-      {variant !== "story" ? (
-      <>
-      {/* ---------- read ---------- */}
-      <section id="read" className="relative scroll-mt-4 border-t border-rule/70 pb-16 pt-16 sm:pt-20 lg:pb-44">
-        <Section>
-        <Wrap className="grid gap-12 lg:grid-cols-12 lg:gap-10">
-          <div className="relative lg:col-span-4">
-            <Eyebrow>Read</Eyebrow>
-            <h2 className="t-heading mt-4 text-[2.1rem] text-ink sm:text-[2.5rem]">
-              Graded readers where A2 is actually A2.
-            </h2>
-            <p className="mt-5 text-[1rem] leading-[1.65] text-ink/70">
-              Short passages from beginner through upper-intermediate. Every one is checked against
-              the level before it is shown. Tap any word for the meaning, the grammar, and the
-              reading.
-            </p>
-            <div className="mt-8 flex flex-wrap items-center gap-x-7 gap-y-4">
-              <Link href="/library" className="btn-primary px-7">
-                Start reading
-              </Link>
-              <Link href="/library" className="t-quiet text-[14px]">
-                See a sample →
-              </Link>
-            </div>
-            <p className="mt-8 text-[12.5px] leading-relaxed text-ink/45">
-              This passage is {level} {language}. The library has the rest of the shelf.
-            </p>
-            <Art
-              src="hills-strip"
-              className="mt-8 hidden w-[30rem] max-w-none -translate-x-20 lg:block"
-            />
-          </div>
-
-          <div className="relative isolate z-10 lg:col-span-5">
-            <ReaderDemo key={lang} lang={lang} onLang={chooseLang} />
-          </div>
-
-          <div className="relative hidden lg:col-span-3 lg:block">
-            <div className="ml-10 w-[10rem]">
-              <HandNote rotate={-8}>A2 vocabulary, real context, deeper understanding.</HandNote>
-              <Arrow kind="curlDown" className="ml-2 mt-1 w-10" />
-            </div>
-            <Art
-              key={lang}
-              src={`pillar-${lang}`}
-              className="mt-2 aspect-[3/4] w-[19rem] max-w-none -translate-x-4 object-contain"
-            />
-          </div>
-        </Wrap>
-        </Section>
-      </section>
-
-      {/* ---------- the check ---------- */}
-      <section id="check" className="relative scroll-mt-4 border-t border-rule/70 py-16 sm:py-20">
-        <Art
-          src="sprig-tall"
-          className="absolute -right-6 bottom-0 hidden w-[9rem] opacity-80 xl:block 2xl:right-[3vw]"
-        />
-        <Section>
-        <Wrap className="grid gap-12 lg:grid-cols-12 lg:gap-10">
-          <div className="lg:col-span-4">
-            <Eyebrow accent>The check</Eyebrow>
-            <h2 className="t-heading mt-4 text-[1.9rem] text-ink sm:text-[2.2rem]">
-              {article} {language} passage that failed the check.
-            </h2>
-            <p className="mt-5 text-[1rem] leading-[1.65] text-ink/70">
-              A morphological analyzer reads every word and checks it against the level. If
-              something is above the level, the passage is rewritten. In the reader, Why this is{" "}
-              {level} shows what was kept out.
-            </p>
-            <p className="mt-5 text-[13px] leading-relaxed text-ink/50">{KEPT_OUT[lang]}</p>
-          </div>
-          <div className="lg:col-span-8">
-            <Drift key={lang} lang={lang} />
-          </div>
-        </Wrap>
-        </Section>
-      </section>
-
-      {/* ---------- a tap ---------- */}
-      <section id="tap" className="relative scroll-mt-4 border-t border-rule/70 py-16 sm:py-20">
-        <Section>
-        <Wrap className="grid gap-10 lg:grid-cols-12 lg:gap-10">
-          <div className="lg:col-span-4">
-            <Eyebrow>A tap</Eyebrow>
-            <h2 className="t-heading mt-4 text-[1.9rem] text-ink sm:text-[2.2rem]">
-              A tap stays in the sentence.
-            </h2>
-            <p className="mt-5 text-[1rem] leading-[1.65] text-ink/70">
-              Tap a word in the passage. The gloss tells you what it is, then you keep reading.
-              Everything you need, right there.
-            </p>
-          </div>
-          <dl className="border-t border-rule lg:col-span-5">
-            {TAP[lang].map((item) => (
-              <div
-                key={item.k}
-                className="grid grid-cols-[1.75rem_1fr] items-baseline gap-x-3 gap-y-1 border-b border-rule py-3.5 sm:grid-cols-[1.75rem_8rem_1fr]"
-              >
-                <LineIcon name={item.icon} className="translate-y-[3px] text-ink/60" />
-                <dt className="text-[14px] font-medium text-ink">{item.k}</dt>
-                <dd className="col-start-2 text-[14px] leading-relaxed text-ink/65 sm:col-start-3">
-                  {item.v}
-                </dd>
-              </div>
-            ))}
-          </dl>
-          <figure className="relative hidden lg:col-span-3 lg:block">
-            <div className="ml-auto w-[8.5rem]">
-              <HandNote rotate={-8}>Look up, learn, keep reading.</HandNote>
-              <Arrow kind="curlDown" className="mt-1 w-9" />
-            </div>
-            <Art key={lang} src={`stone-${lang}`} className="-mt-2 w-[18rem] max-w-none" />
-            <figcaption className="t-hand ml-auto mt-1 w-[9rem] text-[1.05rem]! -rotate-3">
-              Fig. 3. A tap reveals every layer.
-            </figcaption>
-          </figure>
-        </Wrap>
-        </Section>
-      </section>
-
-      </>
-      ) : null}
-      {/* ---------- the shelf ---------- */}
-      <section id="shelf" className="relative scroll-mt-4 border-t border-rule/70 py-16 sm:py-20">
-        <Section>
-        <Wrap className="grid items-start gap-12 lg:grid-cols-12 lg:gap-10">
-          <div className="lg:col-span-4">
-            <Eyebrow accent>The shelf</Eyebrow>
-            <h2 className="t-heading mt-4 text-[1.9rem] text-ink sm:text-[2.2rem]">
-              Keep your shelf.
-            </h2>
-            <p className="mt-5 text-[1rem] leading-[1.65] text-ink/70">
-              An account keeps your level, your saved words, and what you have read, on every
-              device.
-            </p>
-            <Art
-              key={lang}
-              src={`study-${lang}`}
-              className="mt-6 hidden aspect-[4/3] w-[22rem] max-w-none -translate-x-8 object-contain lg:block"
-            />
-          </div>
-
-          <div id="account" className="scroll-mt-8 lg:col-span-4 lg:pt-4">
-            {!demo && !signedIn ? (
-              <div className="sheet px-6 pb-7 pt-1 sm:px-7">
-                <AuthPanel me={me} onRefresh={refreshMe} layout="hero" nextPath="/library" redirectOnSuccess />
-              </div>
-            ) : (
-              <div className="sheet px-6 py-7 sm:px-7">
-                <p className="font-display text-[1.2rem] text-ink">
-                  {demo ? "Your shelf, in this browser" : "Your shelf is waiting"}
+      {variant === "story" ? (
+        <Story steps={storySteps} />
+      ) : (
+        /* ---------- the check ---------- */
+        <section id="check" className="relative scroll-mt-4 border-t border-rule/70 py-16 sm:py-20">
+          <Section>
+          <Wrap className="grid gap-12 lg:grid-cols-12 lg:gap-10">
+            <div className="lg:col-span-4">
+              <Eyebrow accent>The check</Eyebrow>
+              <h2 className="t-heading mt-4 text-[1.9rem] text-ink sm:text-[2.2rem]">
+                {article} {language} passage that failed the check.
+              </h2>
+              <p className="mt-5 text-[1rem] leading-[1.65] text-ink/70">
+                A morphological analyzer reads every word and checks it against the level. If
+                something is above the level, the passage is rewritten. In the reader, Why this is{" "}
+                {level} shows what was kept out.
+              </p>
+              <p className="mt-5 text-[13px] leading-relaxed text-ink/50">{KEPT_OUT[lang]}</p>
+              {count > 0 ? (
+                <p className="tnum mt-6 border-t border-rule/70 pt-4 text-[14px] text-ink">
+                  {count.toLocaleString()} {language} passages on the shelf, each checked by{" "}
+                  {ANALYZER[lang]}.
                 </p>
-                <p className="mt-2 text-[14px] leading-relaxed text-ink/60">
-                  {demo
-                    ? "The demo keeps your level, saved words, and ratings on this device. Nothing leaves it."
-                    : `Signed in${me?.email ? ` as ${me.email}` : ""}. Your level and saved words follow you.`}
-                </p>
-                <Link href="/library" className="btn-primary mt-6 w-full">
-                  Open the library
-                </Link>
-              </div>
-            )}
-          </div>
+              ) : null}
+            </div>
+            <div className="lg:col-span-8">
+              <Drift key={lang} lang={lang} />
+            </div>
+          </Wrap>
+          </Section>
+        </section>
+      )}
 
-          <div className="relative hidden lg:col-span-4 lg:block">
-            <Art src="card-catalog" className="w-[25rem] max-w-none" />
-          </div>
-        </Wrap>
-        </Section>
-      </section>
-
-      {variant !== "story" ? (
-      <>
-      {/* ---------- rate ---------- */}
+      {/* ---------- rate, levels, and the shelf ---------- */}
       <section id="rate" className="relative scroll-mt-4 border-t border-rule/70 py-16 sm:py-20">
         <Section>
-        <Wrap className="grid items-center gap-12 lg:grid-cols-12 lg:gap-10">
-          <div className="lg:col-span-4">
+        <Wrap className="grid items-center gap-10 lg:grid-cols-12 lg:gap-10">
+          <div className="lg:col-span-5">
             <Eyebrow accent>Rate and move forward</Eyebrow>
             <h2 className="t-heading mt-4 text-[1.9rem] text-ink sm:text-[2.2rem]">
               Rate, and move forward.
             </h2>
             <p className="mt-5 text-[1rem] leading-[1.65] text-ink/70">
-              Levels run from A1 through B2. You begin at A2. The shelf remembers the lemmas you
-              have seen, and the next passage is chosen from that.
+              Levels run from A1 through B2. One short read sets where you start. After each
+              passage, say whether it was too easy, just right, or too hard. Three in a row move your
+              level one step.
             </p>
-            <p className="mt-5 text-[13px] leading-relaxed text-ink/50">
-              You can also ask for a passage on a topic you choose. Writing and checking take 20 to
-              40 seconds, and only a passage that passes is added.
+            <p className="mt-4 text-[1rem] leading-[1.65] text-ink/70">
+              The shelf remembers the lemmas you have seen, and the next passage is chosen from that.
+              Once a day, one news passage from a real wire story is added at your level, checked
+              like the rest.
             </p>
           </div>
-          <div className="lg:col-span-5">
-            <RateDemo key={lang} lang={lang} />
+          <div className="lg:col-span-7 lg:-mr-10 xl:-mr-20">
+            <Cliff lang={lang} language={language} anim={anim} />
           </div>
-          <figure className="relative hidden lg:col-span-3 lg:block">
-            <div className="relative z-10 ml-8 w-[9.5rem]">
-              <HandNote rotate={-7}>Three ratings move your level one step.</HandNote>
-              <Arrow kind="longLeft" className="mt-1 w-12" />
-            </div>
-            <Art src="ruins-landscape" className="-mt-6 w-[26rem] max-w-none -translate-x-6" />
-          </figure>
         </Wrap>
-        </Section>
-      </section>
 
-      </>
-      ) : null}
-      {/* ---------- explore ---------- */}
-      <section id="explore" className="relative scroll-mt-4 overflow-hidden border-t border-rule/70">
-        <Section>
-        <Wrap className="grid items-end gap-8 pt-16 sm:pt-20 lg:grid-cols-12 lg:gap-10">
-          <div className="relative z-10 pb-4 lg:col-span-4 lg:pb-20">
-            <Eyebrow accent>Explore</Eyebrow>
-            <h2 className="t-heading mt-4 text-[1.9rem] text-ink sm:text-[2.2rem]">
-              Language opens a wider world.
-            </h2>
-            <p className="mt-5 text-[1rem] leading-[1.65] text-ink/70">{scene.explore}</p>
-            <HandNote rotate={-4} className="mt-7 hidden lg:block">
-              {scene.vistaCaption}
-            </HandNote>
+        <Wrap className="mt-14 grid items-start gap-12 lg:grid-cols-12 lg:gap-10">
+          {variant !== "story" ? (
+            <div className="lg:col-span-6">
+              <RateDemo key={lang} lang={lang} />
+            </div>
+          ) : null}
+
+          <div
+            id="shelf"
+            className={`scroll-mt-8 ${variant === "story" ? "lg:col-span-6 lg:col-start-4" : "lg:col-span-5 lg:col-start-8"}`}
+          >
+            <h3 className="t-heading text-[1.4rem] text-ink">Keep your shelf.</h3>
+            <p className="mt-2 text-[14px] leading-relaxed text-ink/60">
+              Read first. After your first rating, Lociros offers an account that keeps your level,
+              your saved words, and what you have read, on every device.
+            </p>
+            <div id="account" className="mt-5 scroll-mt-8">
+              {!demo && !signedIn ? (
+                <div className="sheet px-6 pb-7 pt-1 sm:px-7">
+                  <AuthPanel
+                    me={me}
+                    onRefresh={refreshMe}
+                    layout="hero"
+                    initialMode="signin"
+                    nextPath="/library"
+                    redirectOnSuccess
+                  />
+                </div>
+              ) : (
+                <div className="sheet px-6 py-7 sm:px-7">
+                  <p className="font-display text-[1.2rem] text-ink">
+                    {demo ? "Your shelf, in this browser" : "Your shelf is waiting"}
+                  </p>
+                  <p className="mt-2 text-[14px] leading-relaxed text-ink/60">
+                    {demo
+                      ? "The demo keeps your level, saved words, and ratings on this device. Nothing leaves it."
+                      : `Signed in${me?.email ? ` as ${me.email}` : ""}. Your level and saved words follow you.`}
+                  </p>
+                  <Link href="/library" data-start onClick={() => start("rate")} className="btn-primary mt-6 w-full">
+                    Open the library
+                  </Link>
+                </div>
+              )}
+            </div>
           </div>
-          <figure className="relative lg:col-span-8 lg:-mr-12 xl:-mr-24">
-            <Art
-              key={lang}
-              src={`vista-${lang}`}
-              className="vista-fade ml-auto aspect-[16/9] w-full max-w-[52rem] object-contain object-right-bottom"
-            />
-          </figure>
         </Wrap>
         </Section>
       </section>
 
       {/* ---------- close ---------- */}
-      <section className="border-t border-rule/70">
+      <section className="relative overflow-hidden border-t border-rule/70">
         <Section>
-        <Wrap className="flex flex-col gap-6 py-10 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="t-heading text-[1.6rem] text-ink sm:text-[1.75rem]">
+        <Wrap className="grid items-end gap-8 pt-14 lg:grid-cols-12 lg:gap-10">
+          <div className="relative z-10 pb-10 lg:col-span-5 lg:pb-16">
+            <h2 className="t-heading text-[1.6rem] text-ink sm:text-[1.9rem]">
               A calmer, more certain way to read.
             </h2>
-            <p className="mt-1.5 text-[13px] text-ink/55">
-              Graded readers for real progress, in Japanese, Arabic, Italian, and Russian.
+            <p className="mt-2 text-[14px] leading-relaxed text-ink/55">
+              Graded readers for real progress, in {languagesText}.
             </p>
+            <div className="mt-6 flex items-center gap-6">
+              <Link href="/library" data-start onClick={() => start("close")} className="btn-primary px-7">
+                Start reading
+              </Link>
+              <Link href="/library" className="t-quiet hidden sm:inline">
+                Explore the library →
+              </Link>
+            </div>
           </div>
-          <div className="flex items-center gap-6">
-            <Link href="/library" className="btn-primary px-7">
-              Start reading
-            </Link>
-            <Link href="/library" className="t-quiet hidden sm:inline">
-              Explore the library →
-            </Link>
-          </div>
+          <figure className="relative lg:col-span-7 lg:-mr-12 xl:-mr-24">
+            <Art
+              key={lang}
+              src={`vista-${lang}`}
+              sizes="(min-width: 1024px) 50vw, 95vw"
+              className="vista-fade ml-auto aspect-[16/9] w-full max-w-[46rem] object-contain object-right-bottom"
+            />
+            <HandNote rotate={-4} className="absolute bottom-6 left-2 hidden lg:block">
+              {scene.vistaCaption}
+            </HandNote>
+            <Arrow kind="swoopRight" className="absolute bottom-2 left-24 hidden w-10 lg:block" />
+          </figure>
         </Wrap>
         </Section>
       </section>
@@ -726,6 +790,7 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
         </Section>
       </footer>
       </div>
+      <StickyStart onStart={() => start("sticky")} />
     </main>
     </MotionConfig>
   );

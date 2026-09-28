@@ -1,4 +1,4 @@
-import { getDemoPassage } from "./demo-catalog";
+import { DEMO_PASSAGES, getDemoPassage } from "./demo-catalog";
 import {
   demoFeedback,
   demoLibrary,
@@ -54,6 +54,15 @@ export async function generatePassage(_body: {
   language: LangCode;
 }): Promise<Passage> {
   throw new Error("This static demo does not generate new passages. Open a title from the shelf.");
+}
+
+export async function fetchShelfCounts(): Promise<Partial<Record<LangCode, number>>> {
+  const counts: Partial<Record<LangCode, number>> = {};
+  for (const p of DEMO_PASSAGES) {
+    if (p.genre === "news") continue;
+    counts[p.language] = (counts[p.language] ?? 0) + 1;
+  }
+  return counts;
 }
 
 export async function fetchLibrary(language: LangCode, _signal?: AbortSignal): Promise<LibraryResponse> {
@@ -134,5 +143,3 @@ export async function submitPlacement(language: LangCode, answers: number[]) {
 export function recordTap(lemma: string, language: LangCode) {
   demoRecordTap(language, lemma);
 }
-
-export async function recordEvent(_kind: string, _passageId?: string) {}

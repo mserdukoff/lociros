@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Caveat, Literata, Noto_Naskh_Arabic, Outfit } from "next/font/google";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import { AuthBridge } from "@/components/auth-bridge";
 import "./globals.css";
 
@@ -68,6 +69,7 @@ export default function RootLayout({
       <body className="min-h-full bg-paper text-ink">
         <AuthBridge />
         {children}
+        <SpeedInsights />
         <script
           // Only register the offline cache in production. In dev the app
           // changes under you constantly, and a service worker happily

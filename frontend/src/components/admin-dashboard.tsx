@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { AuthPanel } from "@/components/auth-panel";
 import { fetchAdminOverview, fetchMe } from "@/lib/api";
-import type { AdminCount, AdminOverview, MeResponse } from "@/lib/types";
+import type { AdminCount, AdminOverview, FunnelMetrics, MeResponse } from "@/lib/types";
 
 function n(value: number | undefined): string {
   return (value ?? 0).toLocaleString();
@@ -38,6 +38,75 @@ function Counts({ title, rows }: { title: string; rows: AdminCount[] }) {
           ))}
         </ul>
       )}
+    </section>
+  );
+}
+
+const STEP_LABELS: Record<string, string> = {
+  landing_view: "Viewed the landing page",
+  demo_tap: "Tapped a word in the demo",
+  start_click: "Clicked Start reading",
+  placement_start: "Opened the placement read",
+  placement_done: "Finished placement",
+  first_rating: "Rated a passage",
+  account_linked: "Linked an account",
+};
+
+function pct(rate: number): string {
+  return `${Math.round(rate * 100)}%`;
+}
+
+function Funnel({ funnel }: { funnel: FunnelMetrics }) {
+  return (
+    <section>
+      <h2 className="text-[14px] font-medium text-ink/55">
+        Landing funnel, last {funnel.window_days} days
+      </h2>
+      <p className="mt-1 text-sm text-ink/45">
+        Browsers that viewed the landing page, and how many of them reached each step.
+      </p>
+      {funnel.landing_devices === 0 ? (
+        <p className="mt-3 text-sm text-ink/45">No landing views yet.</p>
+      ) : (
+        <ul className="mt-3 divide-y divide-rule">
+          {funnel.steps.map((step) => (
+            <li key={step.step} className="flex justify-between gap-4 py-1.5 text-sm">
+              <span>{STEP_LABELS[step.step] ?? step.step}</span>
+              <span className="tnum text-ink/55">
+                {n(step.devices)} · {pct(step.rate)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <ul className="mt-6 grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+        {funnel.returns.map((ret) => (
+          <li key={ret.window_days}>
+            <p className="text-ink/45">Came back within {ret.window_days} days</p>
+            <p className="tnum mt-0.5 text-xl text-ink">
+              {ret.eligible ? pct(ret.rate) : "—"}
+            </p>
+            <p className="tnum text-ink/45">
+              {n(ret.returned)} of {n(ret.eligible)} browsers
+            </p>
+          </li>
+        ))}
+      </ul>
+      {funnel.sticky_test.length > 0 ? (
+        <div className="mt-6">
+          <p className="text-ink/45 text-sm">Sticky Start reading bar on phones, judged on placement</p>
+          <ul className="mt-2 divide-y divide-rule">
+            {funnel.sticky_test.map((arm) => (
+              <li key={arm.arm} className="flex justify-between gap-4 py-1.5 text-sm">
+                <span>{arm.arm === "sticky" ? "With the bar" : "Without the bar"}</span>
+                <span className="tnum text-ink/55">
+                  {n(arm.placement_done)} of {n(arm.devices)} · {pct(arm.rate)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -90,7 +159,7 @@ export function AdminDashboard() {
       </p>
 
       <div className="mt-8">
-        <AuthPanel me={me} onRefresh={refreshMe} nextPath="/admin" />
+        <AuthPanel me={me} onRefresh={refreshMe} nextPath="/admin" layout="hero" initialMode="signin" />
       </div>
 
       {me && !me.authenticated ? (
@@ -152,6 +221,8 @@ export function AdminDashboard() {
               ))}
             </ul>
           </section>
+
+          {data.trial.funnel ? <Funnel funnel={data.trial.funnel} /> : null}
 
           <div className="grid gap-10 sm:grid-cols-3">
             <Counts title="Passages by language" rows={data.passages_by_language} />

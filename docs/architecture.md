@@ -262,6 +262,6 @@ Grammar and vocab JSON are loaded with `lru_cache`. Restart the backend after ed
 
 - **SQLite** is fine for a single-user demo. Compose uses local Postgres. Production uses Supabase.
 - **Generation is async.** `POST /generate` enqueues a job; worker threads process it. Scale with `GENERATE_WORKERS` per process and/or a dedicated worker container.
-- **Accounts are optional.** Guest progress is a device UUID. After Supabase sign-in, FastAPI merges that device into `public.users`. `feedback` rows are not device-scoped.
+- **Accounts are optional.** Guest progress is a device UUID. After Supabase sign-in, FastAPI merges that device into `public.users`, keeping the account's row wherever both have one. `feedback` rows are not device-scoped.
 - **Soft fail.** A passage that still violates the ruleset is stored and readable, with a warning. Calibration is a gate with a retry, not a hard reject.
 - **Analyzer errors** become CEFR errors: the wrong lemma or POS will flag or miss constructions.

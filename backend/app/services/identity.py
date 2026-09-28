@@ -62,20 +62,49 @@ def apply_owner_filter(query, model, identity: Identity):
     return query.filter(False)
 
 
+_MERGE_KEYS = (
+    (LearnerRow, ("language",)),
+    (LearnerLemmaRow, ("language", "lemma")),
+    (LearnerStarRow, ("language", "lemma")),
+    (LearnerReadRow, ("passage_id",)),
+    (LearnerCardRow, ("language", "lemma")),
+    (LearnerNewsSaveRow, ("passage_id",)),
+    (LearnerTapRow, ("language", "lemma")),
+)
+
+
 def merge_guest_into_user(db: Session, device_id: str, user_id: int) -> None:
+    """Move this browser's rows onto the account.
+
+    Lookups by user expect one row per key (one learner per language, one star
+    per lemma). Where the account already has that key, the account's row is
+    kept and the guest duplicate is dropped, so a placed account's band is
+    never overwritten by a browser's. An account row that was never placed
+    takes the browser's band.
+    """
     if not device_id:
         return
-    for model in (
-        LearnerRow,
-        LearnerLemmaRow,
-        LearnerStarRow,
-        LearnerReadRow,
-        LearnerCardRow,
-        LearnerNewsSaveRow,
-        LearnerTapRow,
-    ):
-        rows = db.query(model).filter(model.device_id == device_id).all()
-        for row in rows:
-            if getattr(row, "user_id", None) is None:
+    for model, fields in _MERGE_KEYS:
+        owned = {
+            tuple(getattr(row, f) for f in fields): row
+            for row in db.query(model).filter(model.user_id == user_id).all()
+        }
+        guests = (
+            db.query(model)
+            .filter(model.device_id == device_id, model.user_id.is_(None))
+            .all()
+        )
+        for row in guests:
+            key = tuple(getattr(row, f) for f in fields)
+            kept = owned.get(key)
+            if kept is None:
                 row.user_id = user_id
+                owned[key] = row
+                continue
+            if model is LearnerRow and not kept.placed and row.placed:
+                kept.level = row.level
+                kept.placed = row.placed
+                kept.consecutive_up = row.consecutive_up
+                kept.consecutive_down = row.consecutive_down
+            db.delete(row)
     db.commit()

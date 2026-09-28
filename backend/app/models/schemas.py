@@ -114,6 +114,7 @@ class PlacementResult(BaseModel):
     correct: int
     total: int
     placed: bool = True
+    next_id: str | None = None
 
 
 class TapRequest(BaseModel):

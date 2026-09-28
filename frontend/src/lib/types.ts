@@ -173,6 +173,7 @@ export type PlacementResult = {
   correct: number;
   total: number;
   placed: boolean;
+  next_id?: string | null;
 };
 
 export type LibraryResponse = {
@@ -267,6 +268,27 @@ export type AdminJob = {
   finished_at: string | null;
 };
 
+export type FunnelMetrics = {
+  window_days: number;
+  landing_devices: number;
+  steps: { step: string; devices: number; rate: number }[];
+  returns: { window_days: number; eligible: number; returned: number; rate: number }[];
+  sticky_test: { arm: "sticky" | "control"; devices: number; placement_done: number; rate: number }[];
+};
+
+export type TrialMetrics = {
+  window_days: number;
+  learners_with_reads: number;
+  second_text_completion: number;
+  second_text_pass: boolean;
+  too_hard_rate: number;
+  calibration_trust_pass: boolean;
+  unsolicited_wtp: number;
+  wtp_pass: boolean;
+  go: boolean;
+  funnel?: FunnelMetrics;
+};
+
 export type AdminOverview = {
   api: {
     ok: boolean;
@@ -285,7 +307,7 @@ export type AdminOverview = {
   passages_by_shelf: AdminCount[];
   jobs_by_status: AdminCount[];
   activity_7d: Record<string, number>;
-  trial: Record<string, number | boolean>;
+  trial: TrialMetrics;
   recent_users: AdminUser[];
   recent_jobs: AdminJob[];
 };
@@ -306,6 +328,17 @@ export const LANGUAGES: { id: LangCode; label: string; native: string }[] = [
   { id: "it", label: "Italian", native: "Italiano" },
   { id: "ru", label: "Russian", native: "Русский" },
 ];
+
+/** Japanese is always public; the others follow the server's flags. */
+export function enabledLanguages(me: MeResponse | null): typeof LANGUAGES {
+  return LANGUAGES.filter(
+    (l) =>
+      l.id === "ja" ||
+      (l.id === "ru" && me?.show_russian === true) ||
+      (l.id === "it" && me?.show_italian === true) ||
+      (l.id === "ar" && me?.show_arabic === true),
+  );
+}
 
 export const LEVELS: { id: CefrLevel; label: string; hint: string }[] = [
   { id: "A1", label: "A1", hint: "Beginner" },

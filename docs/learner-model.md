@@ -1,6 +1,6 @@
 # Learner model
 
-A browser UUID in `localStorage` (`lociros.device_id`) is sent as `X-Device-Id`. After Supabase sign-in, FastAPI copies those rows onto `public.users` (`POST /api/auth/session`) and later lookups use `user_id`. Language preference is stored separately (`lociros.language`, default Japanese).
+A browser UUID in `localStorage` (`lociros.device_id`) is sent as `X-Device-Id`. After Supabase sign-in, FastAPI copies those rows onto `public.users` (`POST /api/auth/session`) and later lookups use `user_id`. Where the account already has a row for the same key (a learner for that language, a lemma, a read passage), the account's row is kept and the browser's duplicate is dropped. The one exception is a learner row the account never placed: it takes the browser's band. Language preference is stored separately (`lociros.language`, default Japanese).
 
 A valid device id matches `^[A-Za-z0-9_-]{8,64}$`. Anything else is ignored: the shelf still loads, but placement stays A2 and no lemmas or reads are recorded.
 
@@ -20,7 +20,7 @@ Reads and lemmas are written only in `complete_read` (the **Too easy / Just righ
 
 ## Placement
 
-A new learner has no row yet. The shelf asks for one short passage and four questions (`GET`/`POST /api/placement`) before it states a band. The score sets the band: 0–1 correct is A1, 2 is A2, 3 is B1, 4 is B2. Languages stay on separate rows.
+A new learner has no row yet. The shelf sends them to one short passage and four questions (`GET`/`POST /api/placement`) before it states a band. The result opens `next_id` at the new band rather than the shelf. The score sets the band: 0–1 correct is A1, 2 is A2, 3 is B1, 4 is B2. Languages stay on separate rows.
 
 After that, `too_easy` and `too_hard` still move the band, but only after three ratings in a row in the same direction (`PLACEMENT_STREAK`). `just_right` clears the streak and keeps the band. All three ingest lemmas, mark the passage read, and pick next.
 

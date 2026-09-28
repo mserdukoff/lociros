@@ -1,13 +1,22 @@
 "use client";
 
 import { useEffect } from "react";
+import { track } from "@/lib/api";
 import { isDemo } from "@/lib/demo";
-import { deviceHeaders } from "@/lib/device";
+import { claimSessionDay, deviceHeaders } from "@/lib/device";
 import { isSupabaseAuth } from "@/lib/supabase/env";
 import { createClient } from "@/lib/supabase/client";
 
-/** After Supabase sign-in, attach this browser's guest progress to the account. */
+/**
+ * Mounted once in the root layout. Records one session per UTC day for the
+ * return metrics, and after Supabase sign-in attaches this browser's guest
+ * progress to the account.
+ */
 export function AuthBridge() {
+  useEffect(() => {
+    if (!isDemo() && claimSessionDay()) track("session_start");
+  }, []);
+
   useEffect(() => {
     if (isDemo() || !isSupabaseAuth()) return;
     const supabase = createClient();

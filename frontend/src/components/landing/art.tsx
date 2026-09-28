@@ -1,21 +1,32 @@
 /* eslint-disable @next/next/no-img-element */
 
-export function Art({
-  src,
-  className = "",
-  width,
-}: {
+/** Widths written by scripts/art-sizes.mjs, plus the original (about 1200 px). */
+export function artSrcSet(src: string): string {
+  return `/art/320/${src}.webp 320w, /art/640/${src}.webp 640w, /art/${src}.webp 1200w`;
+}
+
+export type ArtProps = {
   src: string;
   className?: string;
   width?: number;
-}) {
+  /** Rendered width, so a phone does not fetch the 1200 px file. */
+  sizes?: string;
+  /** Above the fold: fetch now at high priority instead of lazily. */
+  priority?: boolean;
+};
+
+export function Art({ src, className = "", width, sizes = "(min-width: 1024px) 40vw, 90vw", priority = false }: ArtProps) {
   return (
     <img
       src={`/art/${src}.webp`}
+      srcSet={artSrcSet(src)}
+      sizes={sizes}
       alt=""
       aria-hidden="true"
       width={width}
       decoding="async"
+      loading={priority ? "eager" : "lazy"}
+      fetchPriority={priority ? "high" : undefined}
       className={`art ${className}`}
     />
   );

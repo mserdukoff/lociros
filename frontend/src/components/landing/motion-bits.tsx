@@ -2,7 +2,7 @@
 
 import { motion, useScroll, useTransform, type Variants } from "motion/react";
 import { useRef } from "react";
-import { ARROWS } from "./art";
+import { ARROWS, artSrcSet } from "./art";
 
 const EASE = [0.22, 1, 0.36, 1] as const;
 
@@ -57,13 +57,26 @@ export function StaggerItem({ children, className = "" }: { children: React.Reac
 }
 
 /** Fades an etching in like ink settling into paper. Remount with `key` to replay. */
-export function InkArt({ src, className = "", delay = 0 }: { src: string; className?: string; delay?: number }) {
+export function InkArt({
+  src,
+  className = "",
+  delay = 0,
+  sizes = "(min-width: 1024px) 40vw, 90vw",
+}: {
+  src: string;
+  className?: string;
+  delay?: number;
+  sizes?: string;
+}) {
   return (
     <motion.img
       src={`/art/${src}.webp`}
+      srcSet={artSrcSet(src)}
+      sizes={sizes}
       alt=""
       aria-hidden="true"
       decoding="async"
+      loading="lazy"
       className={`art ${className}`}
       initial={{ opacity: 0, scale: 1.02, filter: "blur(8px)" }}
       animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
