@@ -349,6 +349,14 @@ export function demoSubmitPlacement(language: LangCode, answers: number[]) {
   const spec = PLACEMENT[language];
   const correct = answers.filter((answer, index) => answer === spec.answers[index]).length;
   const level = bandForScore(correct, spec.answers.length);
+  return { ...placeAt(language, level), correct, total: spec.answers.length };
+}
+
+export function demoChoosePlacement(language: LangCode, level: CefrLevel) {
+  return { ...placeAt(language, level), correct: 0, total: 0 };
+}
+
+function placeAt(language: LangCode, level: CefrLevel) {
   const store = load();
   const lang = store.languages[language];
   lang.placement = level;
@@ -357,7 +365,7 @@ export function demoSubmitPlacement(language: LangCode, answers: number[]) {
   lang.consecutive_down = 0;
   save(store);
   const next_id = pickNextId(language, level, new Set(lang.read), lang.taps);
-  return { language, level, correct, total: spec.answers.length, placed: true, next_id };
+  return { language, level, placed: true, next_id };
 }
 
 export function demoStarWord(body: {

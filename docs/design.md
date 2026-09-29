@@ -159,7 +159,7 @@ Same column as the landing page. Privacy states what stays in the browser (devic
 
 1. Header: wordmark (links to `/`), language segmented control (hidden when only Japanese is enabled).
 2. The language's panorama as a faded banner, then eyebrow `{Language} · Library`, heading **Your {Language} is at {band}.**, band strip, status line (`{n} lemmas seen.` / `Rate a passage to move it.` + `Three ratings in a row move the band.`).
-3. Auth panel (full app): a hairline row. Signed out, it reads **This shelf is on this browser.** with **Sign in or create an account**, which opens the email form in place. A shelf with no band for this language is never shown; the page replaces itself with `/placement`.
+3. Auth panel (full app): a hairline row. Signed out, it reads **This shelf is on this browser.** with **Sign in or create an account**, which opens the email form in place. On the landing page, **Sign in** in the header and **Create an account** in the shelf section open the same form in a modal (native `<dialog>`, `Modal` in `components/modal.tsx`) with a **Sign in / Create account** segmented switch; **Start reading** for a reader with no band opens the two-step onboarding modal instead of navigating. A shelf with no band for this language is never shown; the page replaces itself with `/placement`.
 4. Error panel.
 5. **Continue**: a `sheet-float`. Band strip and a mark-size exam seal top-left, an engraved thumbnail top-right (one of the passage language's two, chosen from the passage id), topic, title, then a ruled meta line with an ink **Read →** button.
 6. Review row on a sage sheet (only when cards are due).

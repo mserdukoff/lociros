@@ -24,7 +24,7 @@ Reads and lemmas are written only in `complete_read` (the **Too easy / Just righ
 
 ## Placement
 
-A new learner has no row yet. The shelf sends them to one short passage and four questions (`GET`/`POST /api/placement`) before it states a band. The result opens `next_id` at the new band rather than the shelf. The score sets the band: 0–1 correct is A1, 2 is A2, 3 is B1, 4 is B2. Languages stay on separate rows.
+A new learner has no row yet. **Start reading** on the landing page opens a two-step onboarding dialog: pick a language, then pick a starting point. **Place me with a short read** (recommended) opens `/placement?language=`. **I know my level** or **I'm just starting** (A1) saves the band with `POST /api/placement/choose` and opens the first passage. A shelf with no band still sends the learner to one short passage and four questions (`GET`/`POST /api/placement`) before it states a band. The result opens `next_id` at the new band rather than the shelf. The score sets the band: 0–1 correct is A1, 2 is A2, 3 is B1, 4 is B2. Languages stay on separate rows.
 
 After that, `too_easy` and `too_hard` still move the band, but only after three ratings in a row in the same direction (`PLACEMENT_STREAK`). `just_right` clears the streak and keeps the band. All three ingest lemmas, mark the passage read, and pick next.
 

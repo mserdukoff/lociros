@@ -19,6 +19,7 @@ from app.models.schemas import (
     MagicLinkRequest,
     PlacementRead,
     PlacementResult,
+    PlacementChoose,
     PlacementSubmit,
     AdminOverview,
     MeResponse,
@@ -695,6 +696,42 @@ def post_placement(
         level=level,  # type: ignore[arg-type]
         correct=correct,
         total=total,
+        placed=True,
+        next_id=next_id,
+    )
+
+
+@router.post("/placement/choose", response_model=PlacementResult)
+def post_placement_choose(
+    body: PlacementChoose,
+    db: Session = Depends(get_db),
+    identity: Identity = Depends(get_identity),
+):
+    require_language(body.language)
+    if not identity.can_persist:
+        raise HTTPException(status_code=400, detail="A device id is required to save a level.")
+    learner = get_or_create_learner(db, identity, body.language)
+    level = set_placed_level(learner, body.level)
+    record_event(
+        db,
+        kind="placement_done",
+        identity=identity,
+        payload={"language": body.language, "level": level, "source": "chosen"},
+        commit=False,
+    )
+    db.commit()
+    next_id = pick_next_id(
+        db,
+        body.language,
+        level,
+        read_ids(db, identity),
+        tapped=set(recent_taps(db, identity, body.language)),
+    )
+    return PlacementResult(
+        language=body.language,
+        level=level,  # type: ignore[arg-type]
+        correct=0,
+        total=0,
         placed=True,
         next_id=next_id,
     )

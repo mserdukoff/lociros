@@ -6,6 +6,7 @@ import {
   demoRecordTap,
   demoReview,
   demoSaveNews,
+  demoChoosePlacement,
   demoStarWord,
   demoSubmitPlacement,
   demoSubmitReview,
@@ -134,6 +135,10 @@ export async function fetchPlacement(language: LangCode) {
 
 export async function submitPlacement(language: LangCode, answers: number[]) {
   return demoSubmitPlacement(language, answers);
+}
+
+export async function choosePlacement(language: LangCode, level: CefrLevel) {
+  return demoChoosePlacement(language, level);
 }
 
 export function recordTap(lemma: string, language: LangCode) {

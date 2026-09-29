@@ -108,6 +108,11 @@ class PlacementSubmit(BaseModel):
     answers: list[int]
 
 
+class PlacementChoose(BaseModel):
+    language: LangCode
+    level: CefrLevel
+
+
 class PlacementResult(BaseModel):
     language: LangCode
     level: CefrLevel

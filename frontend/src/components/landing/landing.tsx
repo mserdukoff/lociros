@@ -4,8 +4,10 @@ import { MotionConfig } from "motion/react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useState } from "react";
-import { AuthPanel, signOutAccount } from "@/components/auth-panel";
+import { signOutAccount } from "@/components/auth-panel";
 import { ContinueCard } from "@/components/continue-card";
+import { OnboardingDialog } from "@/components/onboarding-dialog";
+import { SignInDialog, type AuthMode } from "@/components/sign-in-dialog";
 import { ADMIN_URL } from "@/lib/admin-url";
 import { DemoBanner } from "@/components/demo-banner";
 import { LogoMark } from "@/components/logo";
@@ -20,6 +22,7 @@ import {
   useStoredLanguage,
 } from "@/lib/device";
 import {
+  enabledLanguages,
   LANGUAGES,
   readingFont,
   type CefrLevel,
@@ -356,6 +359,8 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
   const [me, setMe] = useState<MeResponse | null>(null);
   const [counts, setCounts] = useState<Partial<Record<LangCode, number>>>({});
   const [returning, setReturning] = useState<Returning | null>(null);
+  const [authMode, setAuthMode] = useState<AuthMode | null>(null);
+  const [onboarding, setOnboarding] = useState(false);
   // Every language has a hand-authored demo, so the landing page features all
   // of them; the shelf falls back to Japanese if one is not public yet.
   const langs = LANGUAGES.map((l) => l.id);
@@ -458,6 +463,14 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
     track("start_click", { from, language: lang, returning: Boolean(returning) });
   }
 
+  /** New readers get the onboarding dialog; placed readers and accounts go straight to the shelf. */
+  function begin(from: StartFrom, event: React.MouseEvent) {
+    start(from);
+    if (signedIn || returning) return;
+    event.preventDefault();
+    setOnboarding(true);
+  }
+
   const refreshMe = useCallback(() => {
     void fetchMe()
       .then(setMe)
@@ -542,20 +555,49 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
                 Sign out
               </button>
             ) : !demo ? (
-              <a href="#account" className="t-quiet text-ink!">
+              <button
+                type="button"
+                onClick={() => setAuthMode("signin")}
+                aria-haspopup="dialog"
+                className="t-quiet text-ink!"
+              >
                 Sign in
-              </a>
+              </button>
             ) : null}
             <Link
               href="/library"
               data-start
-              onClick={() => start("nav")}
+              onClick={(e) => begin("nav", e)}
               className="btn-primary h-10! px-5! text-[14px]!"
             >
               {signedIn || returning ? "Your shelf" : "Start reading"}
             </Link>
           </nav>
         </header>
+
+        {!demo ? (
+          <SignInDialog
+            open={authMode !== null}
+            mode={authMode ?? "signin"}
+            onClose={() => setAuthMode(null)}
+            me={me}
+            onRefresh={refreshMe}
+          />
+        ) : null}
+        <OnboardingDialog
+          open={onboarding}
+          onClose={() => setOnboarding(false)}
+          initialLanguage={lang}
+          languages={me ? enabledLanguages(me) : LANGUAGES}
+          onSignIn={
+            demo
+              ? undefined
+              : () => {
+                  setOnboarding(false);
+                  setAuthMode("signin");
+                }
+          }
+        />
 
         <DemoBanner />
 
@@ -606,7 +648,7 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
               <Item>
                 <div className="mt-7 flex min-h-12 flex-wrap items-center gap-x-7 gap-y-4">
                   {returning ? null : (
-                    <Link href="/library" data-start onClick={() => start("hero")} className="btn-primary px-7">
+                    <Link href="/library" data-start onClick={(e) => begin("hero", e)} className="btn-primary px-7">
                       Start reading
                     </Link>
                   )}
@@ -746,15 +788,27 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
             </p>
             <div id="account" className="mt-5 scroll-mt-8">
               {!demo && !signedIn ? (
-                <div className="sheet px-6 pb-7 pt-1 sm:px-7">
-                  <AuthPanel
-                    me={me}
-                    onRefresh={refreshMe}
-                    layout="hero"
-                    initialMode="signin"
-                    nextPath="/library"
-                    redirectOnSuccess
-                  />
+                <div className="sheet px-6 py-7 sm:px-7">
+                  <p className="font-display text-[1.2rem] text-ink">Keep it on every device</p>
+                  <p className="mt-2 text-[14px] leading-relaxed text-ink/60">
+                    An email and a password. What you&apos;ve read in this browser comes with you.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setAuthMode("signup")}
+                    aria-haspopup="dialog"
+                    className="btn-primary mt-6 w-full"
+                  >
+                    Create an account
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAuthMode("signin")}
+                    aria-haspopup="dialog"
+                    className="t-quiet mt-4 text-sm"
+                  >
+                    Already have one? Sign in
+                  </button>
                 </div>
               ) : (
                 <div className="sheet px-6 py-7 sm:px-7">
@@ -766,7 +820,7 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
                       ? "The demo keeps your level, saved words, and ratings on this device. Nothing leaves it."
                       : `Signed in${me?.email ? ` as ${me.email}` : ""}. Your level and saved words follow you.`}
                   </p>
-                  <Link href="/library" data-start onClick={() => start("rate")} className="btn-primary mt-6 w-full">
+                  <Link href="/library" data-start onClick={(e) => begin("rate", e)} className="btn-primary mt-6 w-full">
                     Open the library
                   </Link>
                 </div>
@@ -789,7 +843,7 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
               Graded readers for real progress, in {languagesText}.
             </p>
             <div className="mt-6 flex items-center gap-6">
-              <Link href="/library" data-start onClick={() => start("close")} className="btn-primary px-7">
+              <Link href="/library" data-start onClick={(e) => begin("close", e)} className="btn-primary px-7">
                 Start reading
               </Link>
               <Link href="/library" className="t-quiet hidden sm:inline">
@@ -836,7 +890,7 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
         </Section>
       </footer>
       </div>
-      <StickyStart onStart={() => start("sticky")} />
+      <StickyStart onStart={(e) => begin("sticky", e)} />
     </main>
     </MotionConfig>
   );

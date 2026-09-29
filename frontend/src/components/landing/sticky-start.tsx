@@ -36,7 +36,7 @@ function useArm(): StickyArm | null {
  * Shown only while no other Start reading link (marked data-start) is on
  * screen, so a screen never has two primary buttons.
  */
-export function StickyStart({ onStart }: { onStart: () => void }) {
+export function StickyStart({ onStart }: { onStart: (event: React.MouseEvent) => void }) {
   const arm = useArm();
   const [visible, setVisible] = useState(false);
 

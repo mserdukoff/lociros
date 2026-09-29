@@ -173,3 +173,16 @@ def test_events_are_rate_limited(client):
     codes = [client.post("/api/events", json=body, headers=DEVICE).status_code for _ in range(61)]
     assert codes[:60] == [200] * 60
     assert codes[60] == 429
+
+
+def test_placement_choose_sets_level(client):
+    body = {"language": "ja", "level": "B1"}
+    assert client.post("/api/placement/choose", json=body).status_code == 400
+    res = client.post("/api/placement/choose", json=body, headers=DEVICE)
+    assert res.status_code == 200
+    assert res.json()["level"] == "B1"
+    library = client.get("/api/library?language=ja", headers=DEVICE).json()
+    assert library["placed"] is True
+    assert library["placement"] == "B1"
+    bad = client.post("/api/placement/choose", json={"language": "ja", "level": "C2"}, headers=DEVICE)
+    assert bad.status_code == 422

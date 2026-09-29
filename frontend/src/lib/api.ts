@@ -285,6 +285,18 @@ export async function submitPlacement(language: LangCode, answers: number[]): Pr
   return res.json();
 }
 
+export async function choosePlacement(language: LangCode, level: CefrLevel): Promise<PlacementResult> {
+  if (isDemo()) return demoApi.choosePlacement(language, level);
+  const res = await fetch("/api/placement/choose", opts({
+    method: "POST",
+    body: JSON.stringify({ language, level }),
+  }, true));
+  if (!res.ok) {
+    throw new Error(await readError(res));
+  }
+  return res.json();
+}
+
 export function recordTap(lemma: string, language: LangCode, passageId?: string) {
   if (isDemo()) {
     demoApi.recordTap(lemma, language);

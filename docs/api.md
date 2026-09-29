@@ -43,6 +43,7 @@ CORS: `CORS_ORIGINS` (default localhost:3000). `PUBLIC_BASE_URL` is always inclu
 | `GET` | `/trial/metrics?days=30` | Bearer (admin) | Trial gates plus `funnel`: per-step devices and rates against landing views, 2- and 7-day returns, and `sticky_test` arms |
 | `GET` | `/placement?language=ja\|ru\|it\|ar` | | Placement passage and questions, without the answer key |
 | `POST` | `/placement` | `{ language, answers }` + identity | `{ language, level, correct, total, placed, next_id }`. `next_id` is the passage the result screen opens |
+| `POST` | `/placement/choose` | `{ language, level }` + identity | Skips the read: the reader names their band (`A1`–`B2`) in onboarding. Same response with `correct` and `total` at `0`. 400 without an identity |
 | `POST` | `/news/save` | `{ passage_id, language, saved }` + identity | `{ ok, saved }`. Saves or unsaves today's news passage |
 | `POST` | `/taps` | `{ lemma, language, passage_id? }` + `X-Device-Id` | `{ "ok": true }` (ignored without an identity) |
 | `POST` | `/comprehension` | `{ passage_id, answers }` + `X-Device-Id` | `{ ok, correct, total, detail }`. `detail` is one boolean per question. 400 unless every question is answered |
