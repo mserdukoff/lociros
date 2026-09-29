@@ -24,7 +24,7 @@ topic + CEFR + genre + language
   English translation (best-effort)
         │
         ▼
-  SQLite  →  reader
+  Database (SQLite locally, Postgres in production)  →  reader
 ```
 
 ## Generation (`llm.py`, `generate.py`)
@@ -39,7 +39,7 @@ topic + CEFR + genre + language
   - script notes: Russian must mark ё and avoid Latin; Italian must mark accents (è, perché, città); Arabic must be unvowelled MSA with hamza; Japanese must not insert spaces or furigana
 - Response must be JSON `{ "title", "text" }`. Markdown fences and a greedy `{…}` extract are tolerated. Empty text raises. Empty title falls back to the topic.
 
-If calibration fails, a second call is made with up to 20 validator flags. **Severity** is `flags + weighted rates` (see below). The less-severe attempt is stored. A draft that still fails is **quarantined** (`shelf_status=quarantine`) and is not returned by the public library, next-text picker, or `/api/passages/{id}` unless `?lab=1`.
+If calibration fails, a second call is made with up to 20 validator flags. **Severity** is `flags + weighted rates` (see below). The less-severe attempt is stored. A draft that still fails is **quarantined** (`shelf_status=quarantine`) and is not returned by the public library, next-text picker, or `/api/passages/{id}` unless a signed-in admin sends `?lab=1`.
 
 Warnings that can land on the passage:
 
@@ -47,7 +47,7 @@ Warnings that can land on the passage:
 - Corrective rewrite failed; returning the first draft.
 - Library text still has out-of-level flags. (seed path only; those rows are quarantined unless they pass)
 
-Authored seed texts skip the LLM and skip LLM gloss fill (`use_llm_gloss=False`). They still run morph + lexicon + validator. Failed seed rows are deleted and rewritten on the next boot; passed rows are left in place (translation backfilled if missing). A Japanese starter catalog (~150 texts plus multi-chapter series) is seeded from `catalog_ja.py`.
+Authored seed texts skip the LLM and skip LLM gloss fill (`use_llm_gloss=False`). They still run morph + lexicon + validator. Failed seed rows are deleted and rewritten on the next boot; passed rows are left in place (translation backfilled if missing). A Japanese starter catalog of 160 authored texts (50 A1, 57 A2, 33 B1, 20 B2, including 10 series chapters) is seeded from `catalog_ja.py`.
 
 ### Genre hints (prompt only)
 

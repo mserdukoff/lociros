@@ -41,7 +41,7 @@ Asking a model to “write B1 Russian” or “write A1 Japanese” is not enoug
 2. The draft is tokenized with a real analyzer (Sudachi for Japanese, spaCy for Italian, pymorphy3 for Russian, CAMeL Tools for Arabic).
 3. A validator scores over-level lemmas and forbidden constructions.
 4. A failing draft is rewritten with those flags. The closer attempt is kept.
-5. The reader still shows a warning if the text is a soft fail.
+5. A draft that still fails is quarantined: stored for review, never put on the shelf.
 
 The reading UI is built around that analysis: every word already has lemma, POS, gloss, CEFR band, grammar role, verb-suffix pieces, and kanji or Arabic root parts attached before it hits the page.
 
@@ -55,11 +55,21 @@ The reading UI is built around that analysis: every word already has lemma, POS,
 
 **Shelf (`/library`)**
 
-- Switch between Japanese, Italian, Russian, and Arabic (Italian, Russian, and Arabic are behind env flags).
-- See your current placement for that language and how many lemmas you have seen.
+- Switch between Japanese, Italian, Russian, and Arabic. All four are public by default; `SHOW_ITALIAN`, `SHOW_RUSSIAN`, or `SHOW_ARABIC` set to `false` hides one.
+- Before a band is set, take a short placement read (`/placement`). After that, see your current placement and how many lemmas you have seen.
+- See today's news passage for your band, rewritten from a wire RSS item (skipped that day if the feed or the level check fails).
 - Open a **Continue** recommendation, or any other title on the shelf.
 - Each card shows CEFR band, topic, word count, **new vs. known** content words, and whether you have already read it.
-- **Restock the shelf**: generate a new passage for the current language, a CEFR level, a topic, and an optional genre (daily life, travel, news, folklore, work).
+- **Restock the shelf**: generate a new passage for the current language, a CEFR level, a topic, and an optional genre (daily life, travel, news, folklore, work). Capped at `GENERATE_MONTHLY_CAP` a month per browser or account.
+- Export saved words as CSV or an Anki package.
+
+**Review (`/review`)**
+
+- Saved words become SM-2 cards. Grade due cards as again, hard, good, or easy.
+
+**Accounts**
+
+- Optional. Reading works as a guest (a random device id in `localStorage`). Signing in with Supabase Auth (email and password) moves that progress onto the account.
 
 **Reader (`/passage/[id]`)**
 
@@ -72,9 +82,10 @@ The reading UI is built around that analysis: every word already has lemma, POS,
   - English gloss
 - Optionally colour grammar (particles, verbs, endings, adjectives). Off by default.
 - Optionally furigana over kanji (Japanese) or restored vowels over Arabic, and fade already-seen content words.
-- Save a lemma from the gloss; it appears on a **Words** list on the shelf. On **Review**, Japanese stroke-order diagrams appear after **Show**.
+- Save a lemma from the gloss; it appears on a **Words** list on the shelf and in **Review**. On Review, Japanese stroke-order diagrams appear after **Show**.
 - Reveal a full **English** translation, or **this sentence** only.
-- Mark the text **too easy**, **just right**, or **too hard**. Too easy / too hard move placement one CEFR step. Just right keeps it. All three ingest lemmas and give you **Read next**.
+- Play audio on catalog texts that have it (made offline with Azure Speech by `scripts/batch_catalog.py`).
+- Answer up to three questions about the passage, then mark it **too easy**, **just right**, or **too hard**. Three too-easy or too-hard ratings in a row move placement one CEFR step; just right clears the streak. All three ingest lemmas and give you **Read next**.
 
 **Seeded library**
 
@@ -87,7 +98,7 @@ On first backend start, Lociros writes a hand-authored starter library (and Engl
 | Italian  | 2  | 2  | 1  | 0  |
 | Arabic   | 2  | 2  | 1  | 0  |
 
-Generated texts are stored alongside these and appear on the same shelf.
+A Japanese catalog of 160 more authored texts (`catalog_ja.py`) is seeded alongside. Generated texts that pass calibration are stored with these and appear on the same shelf.
 
 ---
 
@@ -115,7 +126,7 @@ topic + CEFR + genre + language
   English translation (best-effort)
         │
         ▼
-  SQLite  →  reader
+  Database (SQLite locally, Postgres in production)  →  reader
 ```
 
 **Generation** (`backend/app/services/llm.py`, `generate.py`)
@@ -127,7 +138,8 @@ topic + CEFR + genre + language
   - a random sample of ~48 lemmas at or below the target band
   - genre hint, if any
 - Response must be JSON `{ "title", "text" }`.
-- If calibration fails, a second call is made at lower temperature with the validator flags. Severity is `flags + weighted rates`. The less-severe attempt is stored even if it still fails (soft fail + warning).
+- If calibration fails, a second call is made at lower temperature with the validator flags. Severity is `flags + weighted rates`. The less-severe attempt is stored. If it still fails it is quarantined (`shelf_status=quarantine`) and hidden from the shelf, the reader, and Continue.
+- Generation runs as a background job: `POST /api/generate` returns 202 and the client polls the job.
 
 **Analysis**
 
@@ -150,7 +162,7 @@ Jisho.org has no kanji API (its public endpoint is word search only). The lexico
 
 ## CEFR rules
 
-Rules live in JSON, not in prompt folklore. Validators in `backend/app/services/validator.py`, `validator_ja.py`, and `validator_it.py` compute rates and emit flags the LLM can be asked to fix.
+Rules live in JSON, not in prompt folklore. Validators in `backend/app/services/validator.py`, `validator_ja.py`, `validator_it.py`, and `validator_ar.py` compute rates and emit flags the LLM can be asked to fix.
 
 ### Russian (`data/grammar/ru_cefr.json`)
 
@@ -247,13 +259,16 @@ Per `(device_id, language)` Lociros keeps:
 
 | Table | Role |
 | ----- | ---- |
-| `learners` | Current CEFR placement (default **A2**) |
+| `learners` | Current CEFR placement (default **A2**) and the rating streak |
 | `learner_lemmas` | Content-word lemmas seen after finishing a text |
+| `learner_taps` | Lemmas opened in the gloss (steer the next title) |
 | `learner_stars` | Lemmas saved from the gloss |
+| `learner_cards` | SM-2 review card per saved lemma |
 | `learner_reads` | Passages already read |
+| `learner_news_saves` | Saved daily news passages |
 | `feedback` | Raw too-easy / just-right / too-hard events |
 
-**Placement.** `too_easy` moves one step up (cap B2). `too_hard` moves one step down (floor A1). `just_right` keeps the current band.
+**Placement.** A placement read (four questions) sets the first band: 0–1 correct A1, 2 A2, 3 B1, 4 B2. After that, three `too_easy` ratings in a row move one step up (cap B2) and three `too_hard` in a row move one step down (floor A1). `just_right` keeps the band and clears the streak.
 
 **New vs. known.** Content POS only:
 
@@ -264,7 +279,7 @@ Per `(device_id, language)` Lociros keeps:
 
 Counts are **token occurrences**, not unique lemmas. The shelf uses this so a recycled word that appears three times counts as three “known.”
 
-**Next text.** Prefer unread, calibration-passed passages at the current level, then one level up, then one down, then the rest of the scale. Within a band, newer texts win. The recommended item is highlighted as **Continue**.
+**Next text.** Prefer unread, calibration-passed passages at the current level, then one level up, then one down, then the rest of the scale. The next chapter of a series comes first. Within the current band, texts that reuse lemmas you tapped in the gloss win, then newer texts. The recommended item is highlighted as **Continue**.
 
 ---
 
@@ -287,9 +302,10 @@ Counts are **token occurrences**, not unique lemmas. The shelf uses this so a re
                                                             OpenRouter (optional)
 ```
 
-- **Frontend** talks to `/api/...` on its own origin. Next.js proxies those paths to `NLP_BACKEND_URL` (default `http://127.0.0.1:8000`) at runtime.
+- **Frontend** talks to `/api/...` on its own origin. The route handler `src/app/api/[...path]/route.ts` proxies those paths to `NLP_BACKEND_URL` (default `http://127.0.0.1:8000`) at runtime, attaching the Supabase access token from the session cookie.
 - Passage pages are **dynamic** (`force-dynamic`, `cache: "no-store"`). The server fetches `/api/passages/:id` at request time so the first paint already has tokens.
-- **Backend** is a sync FastAPI app (SQLAlchemy session per request). On startup it waits for the database, creates tables, and seeds the library.
+- **Backend** is a sync FastAPI app (SQLAlchemy session per request). On startup it waits for the database, creates missing tables, and seeds the library, then starts the generation worker threads.
+- **Admin** is a separate Next.js app in `admin/` (`admin.lociros.com`) that reads `/api/admin/overview` server-side.
 
 ---
 
@@ -299,14 +315,21 @@ Counts are **token occurrences**, not unique lemmas. The shelf uses this so a re
 levla/
 ├── backend/
 │   ├── app/
-│   │   ├── main.py                 # FastAPI app, CORS, lifespan → init_db
+│   │   ├── main.py                 # FastAPI app, CORS, auth middleware, lifespan → init_db + workers
+│   │   ├── worker.py               # dedicated generation-worker process
 │   │   ├── api/routes.py           # HTTP API
-│   │   ├── core/config.py          # env (OpenRouter, DB, CORS, data dir)
+│   │   ├── core/config.py          # env (OpenRouter, DB, CORS, auth, flags, quotas)
 │   │   ├── models/
-│   │   │   ├── db.py               # SQLAlchemy tables
+│   │   │   ├── db.py               # SQLAlchemy tables, bootstrap
 │   │   │   └── schemas.py          # Pydantic request/response models
 │   │   └── services/
-│   │       ├── generate.py         # generate, persist, feedback, translation
+│   │       ├── generate.py         # generate, persist, quarantine, feedback, translation
+│   │       ├── generation_jobs.py  # job queue + worker threads
+│   │       ├── quota.py, rate_limit.py
+│   │       ├── auth.py, supabase_jwt.py, identity.py, admin.py
+│   │       ├── placement.py, news.py, comprehension.py, trial.py
+│   │       ├── srs.py, anki_export.py, tts.py, audio_store.py
+│   │       ├── catalog_ja.py       # authored Japanese catalog
 │   │       ├── llm.py              # OpenRouter: passage, gloss, translate
 │   │       ├── morph.py            # language dispatcher
 │   │       ├── morph_ja.py         # Sudachi
@@ -325,16 +348,18 @@ levla/
 │   │       ├── data.py             # load grammar / vocab / gloss JSON
 │   │       ├── seed.py             # hand-authored library
 │   │       └── seed_translations.py
+│   ├── alembic/versions/           # schema migrations
 │   ├── tests/
 │   ├── requirements.txt
 │   ├── Dockerfile
 │   └── .env.example
 ├── frontend/
-│   ├── src/app/                    # `/` landing, `/library` shelf, `/passage/[id]` reader
-│   ├── src/components/             # Shelf, Reader, GenerateForm, GlossCard
-│   ├── src/lib/                    # API client, types, device id, KanjiVG parser
+│   ├── src/app/                    # landing, /library, /passage/[id], /placement, /review, /privacy, /terms, /api proxy
+│   ├── src/components/             # Shelf, Reader, GenerateForm, GlossCard, landing/
+│   ├── src/lib/                    # API client, types, device id, Supabase, KanjiVG parser
 │   ├── next.config.ts
 │   └── Dockerfile
+├── admin/                          # admin dashboard (Next.js), admin.lociros.com
 ├── data/
 │   ├── grammar/{ru,ja,it,ar}_cefr.json
 │   ├── vocab/{ru,ja,it,ar}_cefr.json
@@ -346,7 +371,10 @@ levla/
 │   ├── build_ja_lexicon.py         # Japanese vocab + gloss
 │   ├── build_it_lexicon.py         # Italian vocab + gloss
 │   ├── build_ar_lexicon.py         # Arabic vocab + gloss + roots
-│   └── build_kanji.py              # KANJIDIC2 + KRADFILE + JLPT → ja.json
+│   ├── build_kanji.py              # KANJIDIC2 + KRADFILE + JLPT → ja.json
+│   ├── batch_catalog.py            # offline catalog generation + audio
+│   └── lightsail-run.sh            # run the API container on Lightsail
+├── docs/
 └── docker-compose.yml
 ```
 
@@ -357,11 +385,11 @@ levla/
 | File | Size (approx.) | Purpose |
 | ---- | -------------- | ------- |
 | `data/vocab/ru_cefr.json` | ~5,400 lemmas | Lemma → A1–B2. Pedagogical core plus frequency banding from a 50k word list. |
-| `data/vocab/ja_cefr.json` | ~500 lemmas | Pedagogical Japanese core, dictionary form. |
+| `data/vocab/ja_cefr.json` | ~4,900 lemmas | Pedagogical Japanese core plus a wider N5–N3-ish list, dictionary form. |
 | `data/vocab/it_cefr.json` | ~1,000 lemmas | Pedagogical Italian core, dictionary form. |
 | `data/vocab/ar_cefr.json` | ~775 lemmas | Pedagogical MSA core, undiacritized dictionary form. |
 | `data/gloss/ru_en.json` | ~1,360 | Short English glosses (pedagogical overlay; not every frequency lemma has a gloss). |
-| `data/gloss/ja_en.json` | ~500 | Short English glosses, keyed to Sudachi dictionary form. |
+| `data/gloss/ja_en.json` | ~4,900 | Short English glosses, keyed to Sudachi dictionary form. |
 | `data/gloss/it_en.json` | ~1,000 | Short English glosses, keyed to lowercased lemma. |
 | `data/gloss/ar_en.json` | ~775 | Short English glosses, keyed to undiacritized lemma. |
 | `data/grammar/ru_cefr.json` | 4 levels | Allowed cases/tenses, forbidden POS/conjunctions, rate caps, prompt text. |
@@ -379,22 +407,27 @@ Russian vocab bands are TORFL-inspired pedagogical assignments plus frequency ra
 
 ## API
 
-Base path: `/api`. OpenAPI is at `http://localhost:8000/docs` when the backend is running.
+Base path: `/api`. OpenAPI is at `http://localhost:8000/docs` in development (turned off when `APP_ENV=production`). The full reference, including placement, news, review, exports, audio, and admin routes, is [docs/api.md](docs/api.md). The core routes:
 
 | Method | Path | Body / query | Notes |
 | ------ | ---- | ------------ | ----- |
 | `GET` | `/health` | | `{ "ok": true, "name": "lociros" }` |
-| `POST` | `/generate` | `{ level, topic, genre?, language }` | **200** cached passage, or **202** job id to poll |
+| `GET` | `/me` | | Identity, placement, remaining generations this month |
+| `POST` | `/generate` | `{ level, topic, genre?, language }` | Needs a device id or sign-in. **200** cached passage, or **202** job id to poll. Monthly cap and 6/min rate limit |
 | `GET` | `/generate/{job_id}` | header `X-Device-Id` | Job status; includes `passage` when complete |
-| `GET` | `/library?language=ja\|ru` | header `X-Device-Id` | Placement, seen lemma count, `next_id`, items with new/known/read/recommended. |
-| `GET` | `/passages/{id}` | | Full passage: text, tokens, calibration, optional translation. |
-| `GET` | `/passages/{id}/translation` | | Returns stored English or generates and stores it. 503 if still unavailable. |
+| `GET` | `/library?language=ja\|it\|ru\|ar` | header `X-Device-Id` | Placement, seen lemma count, `next_id`, items with new/known/read/recommended. |
+| `GET` | `/passages/{id}` | | Full passage: text, tokens, calibration, optional translation. Quarantined passages return 404 |
+| `GET` | `/passages/{id}/translation` | header `X-Device-Id` | Returns stored English or generates and stores it (one LLM try per passage per hour). 503 if still unavailable. |
 | `GET` | `/passages/{id}/stats` | header `X-Device-Id` | Placement, read flag, new/recycled counts, `next_id`, `known_lemmas`, `starred_lemmas`. |
 | `POST` | `/gloss` | `{ word, passage_id? }` | Prefers the passage token; else live analyze + lexicon. |
-| `POST` | `/feedback` | `{ passage_id, rating }` + `X-Device-Id` | `too_easy` \| `just_right` \| `too_hard`. Ingests lemmas, bumps level (except just_right), returns next id. |
-| `GET` | `/words?language=ja\|ru` | header `X-Device-Id` | Starred lemmas for the Words list. |
-| `POST` | `/words` | `{ lemma, gloss?, passage_id?, language? }` + `X-Device-Id` | Save a lemma from the gloss. |
+| `POST` | `/feedback` | `{ passage_id, rating }` + `X-Device-Id` | `too_easy` \| `just_right` \| `too_hard`. Ingests lemmas, moves the level after three same-direction ratings in a row, returns next id. |
+| `GET` | `/words?language=ja` | header `X-Device-Id` | Starred lemmas for the Words list. |
+| `POST` | `/words` | `{ lemma, gloss?, passage_id?, language? }` + `X-Device-Id` | Save a lemma from the gloss (also creates a review card). |
 | `DELETE` | `/words` | `{ lemma, language }` + `X-Device-Id` | Remove a starred lemma. |
+| `GET` | `/review?language=ja` | header `X-Device-Id` | Due SM-2 cards |
+| `POST` | `/review` | `{ card_id, rating }` + `X-Device-Id` | Grade a card: `again` \| `hard` \| `good` \| `easy` |
+
+`/gloss` (120/min), `/events` (60/min), `/generate` (6/min), and `/passages/{id}/translation` (30/min) are rate limited per caller and per IP; over the limit returns 429.
 
 **Generate request**
 
@@ -407,7 +440,7 @@ Base path: `/api`. OpenAPI is at `http://localhost:8000/docs` when the backend i
 }
 ```
 
-`level` is `A1` | `A2` | `B1` | `B2`. `language` is `ru` | `ja` | `it` | `ar` (default `ru` on the API; the UI defaults to Japanese). `genre` is optional: `daily_life`, `travel`, `news`, `folklore`, `work`.
+`level` is `A1` | `A2` | `B1` | `B2`. `language` is `ru` | `ja` | `it` | `ar` (default `ja`). `genre` is optional: `daily_life`, `travel`, `news`, `folklore`, `work`.
 
 **Token** (what the reader clicks)
 
@@ -429,7 +462,7 @@ Base path: `/api`. OpenAPI is at `http://localhost:8000/docs` when the backend i
 
 Whitespace between Japanese morphemes is preserved on `ws` so the original orthography (no extra spaces) round-trips.
 
-**Calibration** on every stored passage: `passed`, `attempts` (1 or 2), rates, `flags`, `warnings`. Soft-fail passages are still readable; the reader shows the warning string.
+**Calibration** on every stored passage: `passed`, `attempts` (1 or 2), rates, `flags`, `warnings`. Passages that fail both attempts are quarantined and never served to learners.
 
 ---
 
@@ -437,8 +470,12 @@ Whitespace between Japanese morphemes is preserved on `ws` so the original ortho
 
 | File | Role |
 | ---- | ---- |
-| `src/app/page.tsx` | Home: title + `Shelf` |
-| `src/components/shelf.tsx` | Language toggle, continue card, rest of library, restock form |
+| `src/app/page.tsx` | Landing page (`src/components/landing/`) |
+| `src/app/library/page.tsx` | Shelf |
+| `src/app/placement/page.tsx`, `src/app/review/page.tsx` | Placement read, SM-2 review |
+| `src/app/api/[...path]/route.ts` | Proxy to FastAPI; attaches the Supabase token, blocks admin and legacy auth paths |
+| `src/app/auth/callback/route.ts` | Supabase sign-in callback |
+| `src/components/shelf.tsx` | Language toggle, continue card, news, rest of library, words, restock form |
 | `src/components/generate-form.tsx` | Level / topic / genre → `POST /api/generate` |
 | `src/app/passage/[id]/page.tsx` | Server-fetches passage, renders `Reader` |
 | `src/components/reader.tsx` | Clickable tokens, gloss card, English toggle, feedback bar |
@@ -448,7 +485,7 @@ Whitespace between Japanese morphemes is preserved on `ws` so the original ortho
 
 UI is a paper/ink/terracotta palette (`src/app/globals.css`). Display and Russian reading use Literata (Cyrillic subset). Japanese uses Outfit plus system Gothic (`Hiragino`, `Yu Gothic`, `Noto Sans JP`). Arabic uses Noto Naskh Arabic (`.font-ar`) and `dir="rtl"`.
 
-Generation is slow on purpose (20–40 seconds is the expected wait): write, analyze, maybe rewrite, translate.
+Generation is slow on purpose (20–40 seconds is the expected wait): write, analyze, maybe rewrite, translate. The client polls the job for up to three minutes.
 
 ---
 
@@ -489,11 +526,13 @@ If the rewrite target is wrong you will see shelf errors; the Next server must b
 
 ## Deploy
 
-Production is **Vercel** (Next.js) + **Supabase** (Postgres) + FastAPI on any Docker host. Walkthrough: [docs/deploy.md](docs/deploy.md).
+Production is **Vercel** (Next.js frontend and admin) + **Supabase** (Postgres and Auth) + FastAPI as a long-running Docker container on an **AWS Lightsail 4 GB** instance. Walkthrough: [docs/deploy.md](docs/deploy.md).
 
-1. Put the Supabase URI in backend `DATABASE_URL` (session pooler on IPv4 hosts; direct is fine from this Mac).
-2. Run the FastAPI Docker image on Fly, Railway, Render, or a VPS. Note the public HTTPS origin.
-3. Import the repo in [Vercel](https://vercel.com/new). Set **Root Directory** to `frontend`. Set `NLP_BACKEND_URL` to that API origin. Leave `NEXT_PUBLIC_DEMO` unset.
+1. Put the Supabase session-pooler URI in backend `DATABASE_URL` (Lightsail is IPv4-only).
+2. Build the backend image, load it on the Lightsail box, and start it with `scripts/lightsail-run.sh` (mounts `/opt/lociros/audio`). Set `APP_ENV=production`, `ADMIN_EMAILS`, and preferably `REQUIRE_AUTH=true`.
+3. Import the repo in [Vercel](https://vercel.com/new). Set **Root Directory** to `frontend`. Set `NLP_BACKEND_URL` to that API origin and the Supabase public variables. Leave `NEXT_PUBLIC_DEMO` unset.
+4. Add a second Vercel project with **Root Directory** `admin` for `admin.lociros.com`, with `ADMIN_EMAIL` set.
+5. Startup does not run migrations. Run `alembic upgrade head` against Supabase when a release adds one.
 
 The frontend can still ship as a **static demo** (hand-authored catalog, `localStorage`, no generation) if you set `NEXT_PUBLIC_DEMO=1` at build time:
 
@@ -532,8 +571,15 @@ cd backend
 pytest
 ```
 
+CI (`.github/workflows/ci.yml`) runs the backend tests, the frontend lint and build, and the admin lint and build. The table lists the main files; see [docs/architecture.md](docs/architecture.md#tests) for the rest.
+
 | File | Covers |
 | ---- | ------ |
+| `tests/test_routes_security.py` | Legacy auth off in production, single-use magic links, generate/translation need an identity, monthly cap, admin-only `lab`, stale-job reclaim, rate limits |
+| `tests/test_generation_jobs.py` | Job queue, pending limit |
+| `tests/test_supabase_auth.py`, `tests/test_guest_merge.py`, `tests/test_admin.py` | JWT verification, guest-to-account merge, admin gating |
+| `tests/test_srs.py`, `tests/test_placement_news.py`, `tests/test_quarantine.py` | Review cards, placement scoring and daily news, quarantine |
+| `tests/test_catalog.py`, `tests/test_shelf_counts.py`, `tests/test_audio_store.py`, `tests/test_trial.py`, `tests/test_config.py` | Catalog seed, shelf counts, audio paths, trial events, settings parsing |
 | `tests/test_validator.py` | Russian lemmas/cases; A1 rejects past, accusative, *если*; A2 allows acc, rejects instrumental |
 | `tests/test_validator_ja.py` | です/ます A1; て-form A1 vs A2; ている A2 vs B1; keigo B1 vs B2; core gloss |
 | `tests/test_validator_it.py` | Present A1; passato prossimo A1 vs A2; congiuntivo B1 vs B2; core gloss |
@@ -582,7 +628,7 @@ Grammar JSON is edited by hand. After changing grammar or vocab, restart the bac
 | -------- | ------- | ------- |
 | `OPENROUTER_API_KEY` | empty | Required for `/generate`, LLM gloss fill, and translation |
 | `LLM_MODEL` | `openai/gpt-4o-mini` | OpenRouter model id |
-| `DATABASE_URL` | `sqlite:///./levla.db` | SQLAlchemy URL. Compose sets Postgres. `postgres://` is rewritten to `postgresql+psycopg2://`. Supabase hosts get `sslmode=require` |
+| `DATABASE_URL` | SQLite at `backend/levla.db` | SQLAlchemy URL. Compose sets Postgres. `postgres://` is rewritten to `postgresql+psycopg2://`. Supabase hosts get `sslmode=require` |
 | `DB_SSLMODE` | empty | Set `require` for hosted Postgres; inferred for Supabase |
 | `CORS_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000` | Comma-separated. `PUBLIC_BASE_URL` is always added |
 | `CORS_ORIGIN_REGEX` | empty | Optional regex for Vercel preview origins |
@@ -596,6 +642,13 @@ Grammar JSON is edited by hand. After changing grammar or vocab, restart the bac
 | `SHOW_RUSSIAN` | `true` | Russian on the public shelf. Set `false` to hide it |
 | `SHOW_ITALIAN` | `true` | Italian on the public shelf. Set `false` to hide it |
 | `SHOW_ARABIC` | `true` | Arabic on the public shelf. Set `false` to hide it |
+| `GENERATE_MONTHLY_CAP` | `10` | Custom passages per account or device per month |
+| `REQUIRE_AUTH` | `false` | `true` limits generation to signed-in accounts (recommended in production) |
+| `ADMIN_EMAILS` | empty | Comma-separated admin emails. Empty means nobody is admin |
+| `AUDIO_DIR` | `backend/audio` | Where catalog MP3s live |
+| `AZURE_SPEECH_KEY` / `AZURE_SPEECH_REGION` | empty | Only used by `scripts/batch_catalog.py` to make audio |
+
+The full list is in [docs/architecture.md](docs/architecture.md).
 
 **Frontend**
 
@@ -605,13 +658,16 @@ Grammar JSON is edited by hand. After changing grammar or vocab, restart the bac
 | `NEXT_PUBLIC_SUPABASE_URL` | empty | Supabase Auth project URL |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | empty | Publishable key. Never the secret |
 | `NEXT_PUBLIC_DEMO` | empty | Static catalog + `localStorage` learner. No Python backend. Set to `1` at **build** time only for that mode |
+| `NEXT_PUBLIC_ADMIN_URL` | `https://admin.lociros.com` | Where `/admin` redirects |
+
+**Admin** (`admin/.env.local`): `ADMIN_EMAIL` (required; unset locks everyone out), `NLP_BACKEND_URL`, the two Supabase public variables, optional `ADMIN_TIME_ZONE`.
 
 ---
 
 ## Limitations
 
-- **Soft fail.** A passage that still violates the ruleset is stored and readable, with a warning. Calibration is a gate with a retry, not a hard reject.
-- **Lexicon coverage.** Japanese vocab is a few hundred lemmas; unknown content words count as over-level (names and some loanwords are skipped). Russian frequency lemmas without a pedagogical gloss may have no English until an LLM fill runs.
+- **Quarantine, not reject.** A generated passage that still violates the ruleset after the rewrite is stored but hidden. The learner who asked for it gets no passage and the generation still counts toward the monthly cap.
+- **Lexicon coverage.** Japanese vocab is about 4,900 lemmas; unknown content words count as over-level (names and some loanwords are skipped). Russian frequency lemmas without a pedagogical gloss may have no English until an LLM fill runs.
 - **Analyzer errors.** pymorphy3, spaCy, Sudachi, and CAMeL Tools can pick the wrong lemma or POS; the validator will then flag or miss constructions.
 - **Japanese construction detection** is heuristic (て+いる, 連体形+noun, a keigo lemma list). It will both over- and under-flag.
 - **Arabic Form I–X mapping** is heuristic on CAMeL وزن patterns. A mis-tagged Form II verb can fail an A1 seed.
@@ -620,7 +676,10 @@ Grammar JSON is edited by hand. After changing grammar or vocab, restart the bac
 - **Guest vs account.** Catalog reading works without an account. Sign-in (Supabase Auth) keeps placement and lemmas across devices.
 - **Languages.** `ja`, `ru`, `it`, and `ar` are all public. `SHOW_RUSSIAN`, `SHOW_ITALIAN`, and `SHOW_ARABIC` can take one off the shelf again. Adding a language means grammar JSON, vocab/gloss, a morph module, a validator, seed texts, and UI labels.
 
-Not in this repo: audio, SRS / Anki export, billed accounts, or official CEFR/JLPT lists.
+- **Audio** exists only for catalog texts that `scripts/batch_catalog.py` voiced offline. Generated passages have none.
+- **Known gaps.** Unfixed security and product gaps are listed in [docs/architecture.md](docs/architecture.md#known-gaps).
+
+Not in this repo: billed accounts, live TTS, or official CEFR/JLPT lists.
 
 ---
 
@@ -628,10 +687,10 @@ Not in this repo: audio, SRS / Anki export, billed accounts, or official CEFR/JL
 
 | Doc | Covers |
 | --- | ------ |
-| [docs/product.md](docs/product.md) | Objective, audience, reading loop, scope vs. `plan.md` |
-| [docs/architecture.md](docs/architecture.md) | Stack, request flow, SQLite, Docker, adding a language |
+| [docs/product.md](docs/product.md) | Objective, audience, reading loop, scope |
+| [docs/architecture.md](docs/architecture.md) | Stack, request flow, persistence, Docker, adding a language, known gaps |
 | [docs/design.md](docs/design.md) | Palette, type, layouts, components, interaction rules |
 | [docs/api.md](docs/api.md) | Endpoints, headers, payloads, status codes |
 | [docs/nlp-and-cefr.md](docs/nlp-and-cefr.md) | Generation, analyzers, validators, lexicons, kanji |
 | [docs/learner-model.md](docs/learner-model.md) | Device id, placement, new/known counts, next-text ranking |
-| [docs/deploy.md](docs/deploy.md) | Vercel frontend, Supabase Postgres, FastAPI on a Docker host |
+| [docs/deploy.md](docs/deploy.md) | Vercel frontend and admin, Supabase Postgres, FastAPI on Lightsail |

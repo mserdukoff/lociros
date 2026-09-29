@@ -225,10 +225,7 @@ def create_magic_link(db: Session, email: str) -> str:
     db.add(row)
     db.commit()
     link = f"{settings.public_base_url}/api/auth/magic/callback?token={token}"
-    if settings.smtp_url:
-        logger.info("Magic link for %s: %s", email, link)
-    else:
-        logger.info("Magic link (no SMTP) for %s: %s", email, link)
+    logger.info("Magic link for %s: %s", email, link)
     return link
 
 
@@ -238,7 +235,14 @@ def consume_magic_link(db: Session, token: str) -> UserRow:
         raise HTTPException(status_code=400, detail="This sign-in link is invalid.")
     if row.expires_at.replace(tzinfo=timezone.utc) < datetime.now(timezone.utc):
         raise HTTPException(status_code=400, detail="This sign-in link has expired.")
-    row.used = True
+    claimed = (
+        db.query(MagicLinkRow)
+        .filter(MagicLinkRow.id == row.id, MagicLinkRow.used.is_(False))
+        .update({MagicLinkRow.used: True}, synchronize_session=False)
+    )
+    if claimed != 1:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="This sign-in link is invalid.")
     user = get_or_create_email_user(db, row.email)
     db.commit()
     return user

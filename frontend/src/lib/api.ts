@@ -50,18 +50,6 @@ export async function fetchMe(): Promise<MeResponse> {
   return res.json();
 }
 
-export async function requestMagicLink(email: string): Promise<{ ok: boolean; link?: string }> {
-  if (isDemo()) return demoApi.requestMagicLink(email);
-  const res = await fetch("/api/auth/magic", opts({
-    method: "POST",
-    body: JSON.stringify({ email }),
-  }, true));
-  if (!res.ok) {
-    throw new Error(await readError(res));
-  }
-  return res.json();
-}
-
 /** Move this browser's guest progress onto the signed-in account. */
 export async function attachGuest(): Promise<void> {
   if (isDemo()) return;
@@ -77,9 +65,16 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+const GENERATE_POLL_MS = 1500;
+const GENERATE_TIMEOUT_MS = 3 * 60 * 1000;
+
 async function pollGenerateJob(jobId: string): Promise<Passage> {
+  const deadline = Date.now() + GENERATE_TIMEOUT_MS;
   for (;;) {
-    await sleep(1500);
+    if (Date.now() > deadline) {
+      throw new Error("This passage is taking too long. Try again in a moment.");
+    }
+    await sleep(GENERATE_POLL_MS);
     const res = await fetch(`/api/generate/${jobId}`, opts({ cache: "no-store" }));
     if (!res.ok) {
       throw new Error(await readError(res));
@@ -230,6 +225,22 @@ export async function unstarWord(lemma: string, language: LangCode): Promise<voi
   if (!res.ok) {
     throw new Error(await readError(res));
   }
+}
+
+/** Downloads through fetch so the device id header reaches the backend. */
+export async function exportWords(language: LangCode, format: "csv" | "apkg"): Promise<void> {
+  const res = await fetch(`/api/words/export.${format}?language=${language}`, opts({ cache: "no-store" }));
+  if (!res.ok) {
+    throw new Error(await readError(res));
+  }
+  const url = URL.createObjectURL(await res.blob());
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `lociros-words-${language}.${format}`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
 
 export async function fetchReview(language: LangCode): Promise<{ due: number; cards: ReviewCard[] }> {

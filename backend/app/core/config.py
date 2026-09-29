@@ -83,7 +83,6 @@ class Settings(BaseSettings):
     require_auth: bool = False
     generate_monthly_cap: int = 10
     auth_cookie_name: str = "lociros_token"
-    smtp_url: str = ""
     data_root: str = Field(default="", validation_alias="DATA_DIR")
     cookie_secure: bool | None = None
     cookie_samesite: str = "lax"

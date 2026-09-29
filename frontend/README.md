@@ -1,36 +1,44 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Lociros frontend
 
-## Getting Started
+Next.js 16 (App Router, React 19) app for the Lociros shelf, reader, placement, and review. The product overview and the full docs are in the [root README](../README.md) and [`docs/`](../docs/README.md).
 
-First, run the development server:
+## Run
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+cp .env.example .env.local   # then fill in the Supabase values
+npm run dev                  # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+FastAPI must be running at `NLP_BACKEND_URL` (default `http://127.0.0.1:8000`). For the static catalog with no backend, run `NEXT_PUBLIC_DEMO=1 npm run dev`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+`npm run lint` and `npm run build` run in CI.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Routes
 
-## Learn More
+| Path | What it is |
+| ---- | ---------- |
+| `/` | Landing page with a live reader demo |
+| `/library` | Shelf: placement, Continue, news, library, words, restock |
+| `/passage/[id]` | Reader (server-fetched tokens) |
+| `/placement` | Placement read |
+| `/review` | SM-2 review of saved words |
+| `/privacy`, `/terms` | Legal pages |
+| `/auth/callback` | Supabase sign-in callback (only same-site `next` redirects) |
+| `/admin` | Redirects to the admin app (`NEXT_PUBLIC_ADMIN_URL`) |
+| `/api/*` | Proxy to FastAPI |
 
-To learn more about Next.js, take a look at the following resources:
+## The `/api` proxy
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+`src/app/api/[...path]/route.ts` forwards requests to `NLP_BACKEND_URL` at runtime. It drops any `Authorization` header from the browser and sets its own from the Supabase session cookie, forwards the other request headers (including `X-Device-Id` and `X-Forwarded-For`), and returns 404 for `admin/*`, `trial/*`, and the legacy `auth/google` and `auth/magic` paths. The admin dashboard is its own app in [`../admin`](../admin).
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Environment
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| Variable | Default | Meaning |
+| -------- | ------- | ------- |
+| `NLP_BACKEND_URL` | `http://127.0.0.1:8000` | FastAPI origin for the proxy and SSR. Server-only, read at runtime |
+| `NEXT_PUBLIC_SUPABASE_URL` | empty | Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | empty | Publishable key (`NEXT_PUBLIC_SUPABASE_ANON_KEY` also works) |
+| `NEXT_PUBLIC_ADMIN_URL` | `https://admin.lociros.com` | Where `/admin` redirects |
+| `NEXT_PUBLIC_STICKY_START_TEST` | unset | `1` shows the sticky start bar test on the landing page |
+| `NEXT_PUBLIC_DEMO` | unset | `1` at build time for the static catalog with no backend |

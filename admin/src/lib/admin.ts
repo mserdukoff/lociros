@@ -3,8 +3,9 @@ import { cache } from "react";
 import { isSupabaseAuth } from "@/lib/supabase/env";
 import { createClient } from "@/lib/supabase/server";
 
+/** Empty when unset, which locks everyone out rather than trusting a default. */
 export function adminEmail(): string {
-  return (process.env.ADMIN_EMAIL || "m.serdukoff@gmail.com").trim().toLowerCase();
+  return (process.env.ADMIN_EMAIL ?? "").trim().toLowerCase();
 }
 
 export type Viewer =
@@ -19,7 +20,7 @@ export type Viewer =
  */
 export const viewer = cache(async (): Promise<Viewer> => {
   await connection();
-  if (!isSupabaseAuth()) return { state: "unconfigured" };
+  if (!isSupabaseAuth() || !adminEmail()) return { state: "unconfigured" };
   const supabase = await createClient();
   const { data, error } = await supabase.auth.getUser();
   const email = data.user?.email?.trim().toLowerCase();

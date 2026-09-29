@@ -258,7 +258,11 @@ def save_news(
     if issue is None:
         raise ValueError("That news passage is not available to save.")
     query = apply_owner_filter(db.query(LearnerNewsSaveRow), LearnerNewsSaveRow, ident)
-    row = query.filter(LearnerNewsSaveRow.passage_id == passage_id).one_or_none()
+    row = (
+        query.filter(LearnerNewsSaveRow.passage_id == passage_id)
+        .order_by(LearnerNewsSaveRow.id)
+        .first()
+    )
     if saved and row is None:
         db.add(
             LearnerNewsSaveRow(

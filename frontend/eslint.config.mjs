@@ -9,10 +9,15 @@ const eslintConfig = defineConfig([
   globalIgnores([
     // Default ignores of eslint-config-next:
     ".next/**",
+    "**/.next/**",
     "out/**",
     "build/**",
     "next-env.d.ts",
   ]),
+  {
+    // Eight existing effects set state synchronously; see "Known gaps" in docs/architecture.md.
+    rules: { "react-hooks/set-state-in-effect": "warn" },
+  },
 ]);
 
 export default eslintConfig;

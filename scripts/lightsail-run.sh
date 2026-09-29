@@ -6,11 +6,16 @@ set -eu
 IMAGE="${IMAGE:-lociros-backend:latest}"
 NAME="${NAME:-lociros-api}"
 ENV_FILE="${ENV_FILE:-/opt/lociros/.env}"
+AUDIO_HOST_DIR="${AUDIO_HOST_DIR:-/opt/lociros/audio}"
 
 if [ ! -f "$ENV_FILE" ]; then
   echo "Missing $ENV_FILE" >&2
   exit 1
 fi
+
+# TTS files live here so they survive container recreation. The image runs as uid 1000.
+mkdir -p "$AUDIO_HOST_DIR" 2>/dev/null || sudo mkdir -p "$AUDIO_HOST_DIR"
+chown 1000:1000 "$AUDIO_HOST_DIR" 2>/dev/null || sudo chown 1000:1000 "$AUDIO_HOST_DIR"
 
 docker rm -f "$NAME" >/dev/null 2>&1 || true
 docker run -d \
@@ -22,6 +27,7 @@ docker run -d \
   -e GENERATE_WORKERS=2 \
   -e DATA_DIR=/app/data \
   -e AUDIO_DIR=/app/backend/audio \
+  -v "$AUDIO_HOST_DIR:/app/backend/audio" \
   -p 8000:8000 \
   "$IMAGE"
 

@@ -4,11 +4,11 @@ Lociros is three pieces in production.
 
 | Piece | Where | Why |
 | ----- | ----- | --- |
-| Next.js frontend | [Vercel](https://vercel.com) | App Router, `/api` proxy, passage SSR |
-| Postgres | [Supabase](https://supabase.com) | Catalog, learner state, generation jobs |
-| FastAPI + worker | AWS Lightsail 4 GB instance (or any Docker host) | Sudachi / spaCy / CAMeL / pymorphy3 do not fit a Vercel function |
+| Next.js frontend and admin | [Vercel](https://vercel.com) (two projects) | App Router, `/api` proxy, passage SSR; `admin.lociros.com` |
+| Postgres + Auth | [Supabase](https://supabase.com) | Catalog, learner state, generation jobs, sign-in |
+| FastAPI + worker threads | AWS Lightsail 4 GB instance | Sudachi / spaCy / CAMeL / pymorphy3 do not fit a Vercel function |
 
-Audio MP3s stay on the API container disk. One API instance is enough.
+Audio MP3s live on the Lightsail host in `/opt/lociros/audio`, mounted into the container by `scripts/lightsail-run.sh`, so they survive a redeploy. One API instance is enough.
 
 ```
 Browser
@@ -65,17 +65,21 @@ Optional: turn off the **Data API**. FastAPI is the only client.
 
 First FastAPI start against this database no-ops `create_all`, stamps Alembic, and seeds the library. That can take several minutes. Confirm with `select count(*) from passages;`
 
+Startup never runs `alembic upgrade`. It creates missing tables and a fixed list of late columns, and stamps Alembic only on a database that has no `alembic_version` yet. When a release adds a migration that changes anything else (an index, a constraint, a data fix), apply it by hand before or after deploying, with `DATABASE_URL` pointing at Supabase:
+
+```bash
+cd backend && alembic upgrade head
+```
+
 ---
 
 ## 2. FastAPI on AWS Lightsail
 
 Do **not** use ECS, an ALB, RDS, or S3. Postgres stays on Supabase. A **$24/month 4 GB Lightsail instance** is enough RAM for Sudachi / spaCy / CAMeL and includes a public IPv4. Lightsail container services need the $80 “Large” (4 GB) plan for the same RAM, so skip those.
 
-This Mac’s saved AWS keys were invalid, so create the instance in the **new account’s console**.
-
 ### 2a. AWS credentials
 
-In the new account: IAM → your user → **Access keys**. Then on this Mac:
+In the AWS account: IAM → your user → **Access keys**. Then on your machine:
 
 ```bash
 aws configure
@@ -123,9 +127,15 @@ OPENROUTER_API_KEY=sk-or-...
 PUBLIC_BASE_URL=http://localhost:3000
 CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 GENERATE_WORKERS=2
+ADMIN_EMAILS=you@example.com
+REQUIRE_AUTH=true
 ```
 
 Generate `JWT_SECRET` with `openssl rand -hex 32`. Percent-encode reserved characters in the database password. Keep `PUBLIC_BASE_URL` as localhost until the Vercel frontend exists.
+
+`REQUIRE_AUTH=true` limits custom-passage generation to signed-in accounts. Without it, any browser can generate up to `GENERATE_MONTHLY_CAP` (default 10) passages a month per device id; device ids are client-chosen, so the per-IP rate limit is then the real ceiling. `ADMIN_EMAILS` empty means nobody can open admin routes.
+
+With `APP_ENV=production` the API also turns off `/docs` and `/openapi.json`, and returns 404 for the legacy magic-link and Google cookie routes; Supabase Auth is the only sign-in.
 
 ### 2d. Build the image on this Mac, load it on Lightsail
 
@@ -138,7 +148,7 @@ scp scripts/lightsail-run.sh ubuntu@PUBLIC_IP:
 ssh ubuntu@PUBLIC_IP 'chmod +x lightsail-run.sh && ./lightsail-run.sh'
 ```
 
-First start seeds the library and can take several minutes. Then:
+`lightsail-run.sh` creates `/opt/lociros/audio` (owned by uid 1000, the image's user) and mounts it as `AUDIO_DIR`. First start seeds the library and can take several minutes. Then:
 
 ```bash
 curl -fsS "http://PUBLIC_IP:8000/health"
@@ -148,7 +158,7 @@ curl -fsS "http://PUBLIC_IP:8000/api/health/ready"
 
 That `http://PUBLIC_IP:8000` origin is `NLP_BACKEND_URL` when you later create the Vercel project. Server-side fetch does not need HTTPS. Add a domain and Caddy on 80/443 when you have one.
 
-One API process with `WEB_CONCURRENCY=1` and `GENERATE_WORKERS=2` is enough. Do not run a second worker container on this box.
+One API process with `WEB_CONCURRENCY=1` and `GENERATE_WORKERS=2` is enough. Do not run a second worker container on this box. Keep it at one process: rate limits and the translation cooldown live in process memory, and every extra uvicorn worker starts its own generation threads.
 
 ### 2e. Optional: HTTPS later
 
@@ -185,7 +195,7 @@ The dashboard is its own Next app in `admin/`. It shows a sign-in form, and only
 1. In Vercel, add a **second** project from the same repo.
 2. Set **Root Directory** to `admin`.
 3. Add environment variables:
-   - `ADMIN_EMAIL` = `m.serdukoff@gmail.com`
+   - `ADMIN_EMAIL` = the admin's address (required; if it is unset the dashboard shows "Not configured" and nobody gets in)
    - `NLP_BACKEND_URL` = the same FastAPI origin as the frontend
    - `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` = the same values as the frontend
    - `ADMIN_TIME_ZONE` (optional, default `America/New_York`)
@@ -209,12 +219,16 @@ Google sign-in (later): enable the Google provider in Supabase Auth. On Google C
 | `JWT_SECRET` | Long random string |
 | `DATABASE_URL` | Supabase URI from step 1 |
 | `DB_SSLMODE` | `require` (inferred for Supabase hosts) |
-| `DB_POOL_SIZE` / `DB_MAX_OVERFLOW` | `5` / `5` is a safe start |
+| `DB_POOL_SIZE` / `DB_MAX_OVERFLOW` | Defaults `5` / `10`; `5` / `5` is a conservative override |
 | `PUBLIC_BASE_URL` | Frontend origin |
 | `CORS_ORIGINS` | Same frontend origin |
 | `CORS_ORIGIN_REGEX` | Optional, `https://.*\.vercel\.app` for preview URLs |
 | `OPENROUTER_API_KEY` | Generation, LLM gloss, translation |
-| `ADMIN_EMAILS` | Comma-separated emails the admin API accepts (include the admin app's `ADMIN_EMAIL`) |
+| `ADMIN_EMAILS` | Comma-separated emails the admin API accepts (include the admin app's `ADMIN_EMAIL`). Empty locks admin routes |
+| `REQUIRE_AUTH` | `true` recommended: only signed-in accounts can generate |
+| `GENERATE_MONTHLY_CAP` | Custom passages per account or device per month (default `10`) |
+| `GENERATE_WORKERS` | `2` |
+| `AZURE_SPEECH_KEY` / `AZURE_SPEECH_REGION` | Only needed where `scripts/batch_catalog.py` makes audio |
 | `SUPABASE_URL` | `https://PROJECT.supabase.co` — inferred from a direct `db.*.supabase.co` URI |
 | `SKIP_SEED` | `true` on extra API/worker processes after the first seed |
 
@@ -249,5 +263,8 @@ On Vercel, set `NEXT_PUBLIC_DEMO=1` at **build** time and omit `NLP_BACKEND_URL`
 | `/api/*` returns 502 `Backend unavailable` | `NLP_BACKEND_URL` missing or FastAPI is down |
 | `Tenant or user not found` | Pooler username must be `postgres.PROJECT_REF` |
 | Connection timeout | Direct `db.*.supabase.co` on an IPv4-only host; use the session pooler |
-| Generate 202 forever | No worker threads (`GENERATE_WORKERS=0`) and no worker process |
+| Restock gives up with "taking too long" | No worker threads (`GENERATE_WORKERS=0`) and no worker process, or the LLM is hanging. The client stops polling after three minutes; the API marks a job stuck in `running` for 10 minutes as failed |
+| Restock returns 429 | Monthly cap, pending-job limit, or the per-minute rate limit |
+| Admin dashboard says "Not configured" | `ADMIN_EMAIL` or the Supabase variables are missing on the admin project |
+| A new column or index is missing in production | A migration was not applied; run `alembic upgrade head` |
 | Google redirect mismatch | Callback must be `https://FRONTEND/auth/callback` in Supabase Auth → Redirect URLs |

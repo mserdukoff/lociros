@@ -16,20 +16,26 @@ const HOP = new Set([
   "upgrade",
   "host",
   "content-length",
+  "authorization",
 ]);
 
+/** Backend routes the public app never calls: admin has its own app, legacy auth is Supabase now. */
+const BLOCKED = [/^admin(\/|$)/, /^trial(\/|$)/, /^auth\/google/, /^auth\/magic/];
+
 async function proxy(req: NextRequest, path: string[]) {
-  const dest = `${backendUrl()}/api/${path.join("/")}${new URL(req.url).search}`;
+  const route = path.join("/");
+  if (BLOCKED.some((pattern) => pattern.test(route))) {
+    return NextResponse.json({ detail: "Not found" }, { status: 404 });
+  }
+  const dest = `${backendUrl()}/api/${route}${new URL(req.url).search}`;
   const headers = new Headers();
   req.headers.forEach((value, key) => {
     if (!HOP.has(key.toLowerCase())) {
       headers.set(key, value);
     }
   });
-  if (!headers.has("authorization")) {
-    const token = await accessToken();
-    if (token) headers.set("Authorization", `Bearer ${token}`);
-  }
+  const token = await accessToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
   const method = req.method.toUpperCase();
   const body =
     method === "GET" || method === "HEAD" ? undefined : await req.arrayBuffer();

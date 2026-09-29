@@ -16,20 +16,21 @@ Asking a model to “write B1 Russian” or “write A1 Japanese” is not enoug
 
 Serious hobbyists and heritage learners of Japanese, Italian, Russian, or Arabic who have hit the graded-reader gap: native material is too hard, textbook dialogues are too short and too fake, and LLM “write me A2 Japanese” output is not actually A2.
 
-The app is a **single-user demo**, not a multi-tenant product. There are no accounts, billing, or sync across devices.
+Reading needs no account: each browser gets a random device id and its progress is stored on the server under it. An account is optional (Supabase Auth, email and password). Signing in moves the browser's progress onto the account so it follows the reader to other browsers. There is no billing.
 
 ## What the learner can do
 
-Two screens, plus a landing page at `/` that explains the claim and opens into the shelf.
+A landing page at `/` explains the claim and opens into the app. The main screens are the shelf, the reader, the placement read (`/placement`), and review (`/review`). `/privacy` and `/terms` hold the legal copy.
 
 ### Shelf (`/library`)
 
-- Switch between Japanese, Italian, Russian, and Arabic (Italian, Russian, and Arabic are env-flagged).
+- Switch between Japanese, Italian, Russian, and Arabic. All four are public by default; `SHOW_ITALIAN`, `SHOW_RUSSIAN`, or `SHOW_ARABIC` set to `false` hides one.
 - Before a band is set, read one short passage and answer four questions. After that, see the current placement and how many lemmas have been seen.
 - See today's news passage, with its source and date, when one was checked for this band.
 - Open a **Continue** recommendation, or any other title on the shelf.
 - Each card shows CEFR band, topic, word count, **new vs. known** content-word tokens, and whether the passage has already been read.
-- **Restock the shelf**: generate a new passage for the current language, a CEFR level, a topic, and an optional genre (daily life, travel, news, folklore, work).
+- **Restock the shelf**: generate a new passage for the current language, a CEFR level, a topic, and an optional genre (daily life, travel, news, folklore, work). Each browser or account gets `GENERATE_MONTHLY_CAP` custom passages a month (default 10); a topic that is already on the shelf comes back from the cache and does not count. With `REQUIRE_AUTH=true` restocking also needs a signed-in account.
+- Export the saved **Words** list as CSV or an Anki package.
 
 ### Reader (`/passage/[id]`)
 
@@ -43,7 +44,8 @@ Two screens, plus a landing page at `/` that explains the claim and opens into t
 - Optionally **colour grammar**: particles (は topic, が subject, を object, others), verbs, endings, adjectives. Off by default; persists in `localStorage`.
 - Optionally **furigana** over kanji (Japanese) or restored vowels over Arabic. Off by default.
 - Optionally **fade known** content words the learner has already finished in other texts.
-- Save a lemma from the gloss; a **Words** list on the shelf (not SRS). Stroke-order diagrams are not on that list — on **Review**, they appear after **Show**.
+- Save a lemma from the gloss. It appears in the **Words** list on the shelf and becomes an SM-2 review card; due cards are graded on **Review** (`/review`) as again, hard, good, or easy. Stroke-order diagrams are not on the Words list; on Review they appear after **Show**.
+- Play passage audio where it exists. Audio is made offline by `scripts/batch_catalog.py` with Azure Speech, so only catalog texts processed by that script have it; generated passages do not.
 - Reveal a full **English** translation, or **this sentence** only, in the same English section under the passage. Sentence mode does not open the word gloss.
 - Answer two or three questions about the passage, then mark it **too easy**, **just right**, or **too hard**. Three too-easy or too-hard ratings in a row move the band one step. Just right keeps the level. All three ingest lemmas and pick **Read next**, preferring a text that reuses words opened in the gloss.
 
@@ -79,23 +81,23 @@ Optional side path: **Restock the shelf** → wait 20–40 seconds for constrain
 
 There is no signup before reading. The account is offered under the first **Saved.** line ("This stays on this browser. Create an account to keep it."). Leaving the passage dismisses it; it comes back once, after the third finished passage, then stops. It is not shown in the demo, when Supabase Auth is not configured, or to a signed-in reader. Two one-time lines teach the app: **Tap any word.** above the placement passage (gone after the first gloss), and the three-in-a-row rule under the rating pills (gone after the first rating). All three states live in `localStorage`: `lociros.tap_hint`, `lociros.rating_hint`, `lociros.account_prompt`.
 
-## Positioning vs. plan.md
+## Scope
 
-`plan.md` is the original Russian-only v1 sketch (Grammario lineage, paywall stub, r/Russian beta). The running app diverged:
+| Area | Built |
+| ---- | ----- |
+| Languages | Japanese, Italian, Russian, and Arabic, A1–B2 |
+| Accounts | Optional Supabase Auth (email and password). Guest device id until sign-in |
+| Passage length | Russian 400–700 words; Japanese 22–40 short sentences |
+| Failed calibration | Quarantined: stored for review, hidden from the shelf and the reader |
+| Review | SM-2 cards for saved words, CSV and Anki export |
+| Audio | Azure Speech, generated offline for catalog texts |
+| Billing | Not implemented |
 
-| Plan v1 | Built |
-| ------- | ----- |
-| Russian only | Japanese, Italian, Russian, and Arabic |
-| Lightweight auth + paywall stub | Supabase Auth (email link, Google). Guest device UUID until sign-in |
-| 300–800 word Russian passages | Russian 400–700 words; Japanese 22–40 short sentences |
-| Hard reject on failed calibration | Soft fail: store the closer draft, show a warning |
-| Monetization ($5–8/mo) | Not implemented |
+Not in this repo: billing, official CEFR or JLPT word lists, C1/C2, or languages other than `ru`, `ja`, `it`, and `ar`.
 
-Not in this repo: billed accounts, official CEFR or JLPT word lists, C1/C2, or languages other than `ru`, `ja`, `it`, and `ar`. All four are public by default; `SHOW_ITALIAN` / `SHOW_RUSSIAN` / `SHOW_ARABIC` set to `false` take one off the shelf.
+## Success criteria
 
-## Success criteria (from the original plan, still relevant)
-
-Do not add languages, audio, or SRS until there is signal this loop works:
+Signals that the reading loop works:
 
 - Testers return for a second or third passage without prompting. Measured two ways: the second-text rate in `trial_metrics` (share of readers with two or more reads, gate 40%), and the funnel's return rates, the share of browsers that come back on a later UTC day within 2 and within 7 days of their first visit.
 - “Too hard” rate is low enough that CEFR labeling is credible (gate under 15%).

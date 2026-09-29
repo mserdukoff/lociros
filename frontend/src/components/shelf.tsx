@@ -12,7 +12,7 @@ import { DemoBanner } from "@/components/demo-banner";
 import { AuthPanel } from "@/components/auth-panel";
 import { Art } from "@/components/landing/art";
 import { LogoMark } from "@/components/logo";
-import { fetchLibrary, fetchMe, fetchReview, saveNews, unstarWord } from "@/lib/api";
+import { exportWords, fetchLibrary, fetchMe, fetchReview, saveNews, unstarWord } from "@/lib/api";
 import { isDemo } from "@/lib/demo";
 import { hasStoredLanguage, loadLanguage, saveLanguage } from "@/lib/device";
 import {
@@ -130,25 +130,32 @@ function WordsList({
           </li>
         ))}
       </ul>
-      {isDemo() ? null : (
-        <p className="t-quiet">
-          Export{" "}
-          <a
-            href="/api/words/export.csv"
-            className="underline decoration-ink/20 underline-offset-4 hover:text-ink"
-          >
-            CSV
-          </a>
-          {" · "}
-          <a
-            href="/api/words/export.apkg"
-            className="underline decoration-ink/20 underline-offset-4 hover:text-ink"
-          >
-            Anki pack
-          </a>
-        </p>
-      )}
+      {isDemo() ? null : <WordsExport language={language} />}
     </section>
+  );
+}
+
+function WordsExport({ language }: { language: LangCode }) {
+  const [error, setError] = useState<string | null>(null);
+  const download = (format: "csv" | "apkg") => {
+    setError(null);
+    exportWords(language, format).catch((err: unknown) => {
+      setError(err instanceof Error ? err.message : "Export failed.");
+    });
+  };
+  const linkClass = "underline decoration-ink/20 underline-offset-4 hover:text-ink";
+  return (
+    <p className="t-quiet">
+      Export{" "}
+      <button type="button" onClick={() => download("csv")} className={linkClass}>
+        CSV
+      </button>
+      {" · "}
+      <button type="button" onClick={() => download("apkg")} className={linkClass}>
+        Anki pack
+      </button>
+      {error ? <span className="ml-2 text-terracotta">{error}</span> : null}
+    </p>
   );
 }
 

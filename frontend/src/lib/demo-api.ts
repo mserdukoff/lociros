@@ -41,10 +41,6 @@ export async function fetchMe(): Promise<MeResponse> {
   };
 }
 
-export async function requestMagicLink(_email: string): Promise<{ ok: boolean; link?: string }> {
-  return { ok: false };
-}
-
 export async function logout(): Promise<void> {}
 
 export async function generatePassage(_body: {

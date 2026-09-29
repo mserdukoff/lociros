@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
+import time
 import uuid
 from datetime import datetime, timezone
 
@@ -380,6 +382,22 @@ def generate_passage(
     return _to_response(row)
 
 
+TRANSLATION_RETRY_SECONDS = 3600
+_translation_attempts: dict[str, float] = {}
+_translation_lock = threading.Lock()
+
+
+def _may_translate(passage_id: str) -> bool:
+    """One LLM translation attempt per passage per hour, per process."""
+    now = time.monotonic()
+    with _translation_lock:
+        last = _translation_attempts.get(passage_id)
+        if last is not None and now - last < TRANSLATION_RETRY_SECONDS:
+            return False
+        _translation_attempts[passage_id] = now
+        return True
+
+
 def ensure_translation(db: Session, passage_id: str) -> str | None:
     row = db.get(PassageRow, passage_id)
     if row is None:
@@ -387,6 +405,8 @@ def ensure_translation(db: Session, passage_id: str) -> str | None:
     existing = getattr(row, "translation", None)
     language = row.language or "ru"
     if english_aligned(row.text, existing, language):
+        return existing
+    if not _may_translate(passage_id):
         return existing
     translation = translate_passage(row.text, language)
     if translation:

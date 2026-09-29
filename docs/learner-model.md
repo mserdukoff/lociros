@@ -12,9 +12,13 @@ Per `(device_id, language)` Lociros keeps:
 | `learner_lemmas` | Content-word lemmas seen after finishing a text. Unique on `(device_id, language, lemma)` |
 | `learner_taps` | Lemmas opened in the gloss. Unique on `(device_id, language, lemma)`. Not the same set as `learner_lemmas` |
 | `learner_stars` | Lemmas the learner saved from a gloss. Unique on `(device_id, language, lemma)` |
+| `learner_cards` | One SM-2 review card per saved lemma (ease, interval, due date). Unique on `(device_id, language, lemma)` |
+| `learner_news_saves` | Daily news passages the learner saved |
 | `learner_reads` | Passages already read. Unique on `(device_id, passage_id)` — language is implied by the passage |
 | `news_issues` | One news passage per UTC day, language, and band, shared by every learner at that band |
 | `feedback` | Raw too-easy / just-right / too-hard events (not device-scoped) |
+
+The unique constraints are on `device_id`. Signed-in lookups go by `user_id`, which has no unique index; if two rows ever share a key, the oldest (lowest `id`) is used.
 
 Reads and lemmas are written only in `complete_read` (the **Too easy / Just right / Too hard** path). Opening a passage does not mark it read and does not ingest lemmas. Starring a word does not ingest it into `learner_lemmas`.
 
@@ -52,7 +56,7 @@ Ingest happens **before** the level bump, using the seen-set from before this pa
 3. one level down (if any)
 4. the rest of A1–B2
 
-Within the current band, an unread passage that reuses lemmas from `learner_taps` wins, then a newer `created_at`. Other bands stay on recency. The library query already drops soft-fails, so Continue is chosen from public, checked texts. If every passage is already read, it still returns something (including an already-read row).
+Within the current band, an unread passage that reuses lemmas from `learner_taps` wins, then a newer `created_at`. Other bands stay on recency. Quarantined drafts (`shelf_status = quarantine`) are never candidates, so Continue is chosen from public texts. A passage that belongs to a series offers its next chapter first. If every passage is already read, it still returns something (including an already-read row).
 
 Restock sends those tapped lemmas to the generator as a short reuse list. The level rules in `data/grammar/` still apply.
 
@@ -62,11 +66,10 @@ The recommended item is `next_id` and is highlighted as **Continue**. The reader
 
 ## What the model is not
 
-- Not spaced repetition. Lemmas are a set, not a schedule or strength. Saved Words are a list, not a review queue.
-- Not click-based for the seen-lemma set. Tapping a gloss writes `learner_taps` and can steer the next title. It does not add a lemma to `learner_lemmas`. Finishing via feedback does. **Save** writes `learner_stars`.
-- Not cross-device until sign-in. Clearing site data without an account is a full reset of client identity.
+- Not spaced repetition for seen lemmas. `learner_lemmas` is a set, not a schedule or strength. Only saved words are scheduled: **Save** writes `learner_stars` and an SM-2 card in `learner_cards`, reviewed at `/review`.
+- Not click-based for the seen-lemma set. Tapping a gloss writes `learner_taps` and can steer the next title. It does not add a lemma to `learner_lemmas`. Finishing via feedback does.
+- Not cross-device until sign-in. After sign-in, guest progress on this browser is merged into the account. Clearing site data without an account is a full reset of client identity.
 - Not a certificate. The placement read sets a starting band. Later movement still comes from the three-rating streak.
-- Cross-device after sign-in. Guest progress on this browser is merged into the account. Clearing site data without an account is still a full reset.
 
 ## Daily news
 

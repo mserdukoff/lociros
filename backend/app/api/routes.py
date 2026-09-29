@@ -78,6 +78,7 @@ from app.services.library import list_library, shelf_counts
 from app.services.news import save_news
 from app.services.morph import analyze_word
 from app.services.quota import consume_generate, remaining_generates
+from app.services.rate_limit import rate_limit
 from app.services.srs import due_cards, due_count, review_card
 from app.services.trial import (
     SERVER_EVENTS,
@@ -147,7 +148,7 @@ def me(request: Request, db: Session = Depends(get_db), identity: Identity = Dep
         show_russian=settings.show_russian,
         show_italian=settings.show_italian,
         show_arabic=settings.show_arabic,
-        generate_remaining=remaining if settings.require_auth else None,
+        generate_remaining=remaining if identity.can_persist else None,
         require_auth=settings.require_auth,
         admin=is_admin_user(user),
     )
@@ -214,13 +215,24 @@ def auth_session(
     return {"ok": True, "user_id": identity.user_id}
 
 
-@router.get("/auth/google")
+def require_legacy_auth() -> None:
+    """Magic-link and Google cookie sign-in predate Supabase Auth.
+
+    Magic links are never emailed (the link comes back in the response), and
+    the Google flow uses the device id as OAuth state, so neither is safe to
+    expose in production.
+    """
+    if settings.is_production:
+        raise HTTPException(status_code=404, detail="Not found")
+
+
+@router.get("/auth/google", dependencies=[Depends(require_legacy_auth)])
 def auth_google(request: Request):
     state = request.query_params.get("device_id") or ""
     return RedirectResponse(google_authorize_url(state))
 
 
-@router.get("/auth/google/callback")
+@router.get("/auth/google/callback", dependencies=[Depends(require_legacy_auth)])
 def auth_google_callback(
     request: Request,
     db: Session = Depends(get_db),
@@ -241,16 +253,13 @@ def auth_google_callback(
     return response
 
 
-@router.post("/auth/magic")
+@router.post("/auth/magic", dependencies=[Depends(require_legacy_auth)])
 def auth_magic(body: MagicLinkRequest, db: Session = Depends(get_db)):
     link = create_magic_link(db, body.email)
-    payload: dict = {"ok": True}
-    if not settings.smtp_url:
-        payload["link"] = link
-    return payload
+    return {"ok": True, "link": link}
 
 
-@router.get("/auth/magic/callback")
+@router.get("/auth/magic/callback", dependencies=[Depends(require_legacy_auth)])
 def auth_magic_callback(
     token: str,
     db: Session = Depends(get_db),
@@ -268,7 +277,7 @@ def auth_logout(response: Response):
     return {"ok": True}
 
 
-@router.post("/generate")
+@router.post("/generate", dependencies=[Depends(rate_limit("generate", 6))])
 def post_generate(
     body: GenerateRequest,
     db: Session = Depends(get_db),
@@ -279,13 +288,17 @@ def post_generate(
             status_code=401,
             detail="Sign in to generate a custom passage. The catalog is free to read.",
         )
+    if not identity.can_persist:
+        raise HTTPException(
+            status_code=401,
+            detail="A device id is required to generate a custom passage.",
+        )
     require_language(body.language)
     topic = body.topic.strip()
     cached = find_cached_passage(db, body.level, topic, body.genre, body.language)
     if cached is not None:
         return cached
-    if settings.require_auth:
-        consume_generate(db, identity)
+    consume_generate(db, identity)
     known = (
         sorted(seen_lemmas(db, identity, body.language))
         if identity.can_persist
@@ -361,15 +374,29 @@ def get_passage_route(
     passage_id: str,
     lab: bool = Query(default=False),
     db: Session = Depends(get_db),
+    identity: Identity = Depends(get_identity),
 ):
-    passage = get_passage(db, passage_id, include_quarantine=lab)
+    include_quarantine = False
+    if lab and identity.user_id:
+        include_quarantine = is_admin_user(db.get(UserRow, identity.user_id))
+    passage = get_passage(db, passage_id, include_quarantine=include_quarantine)
     if passage is None:
         raise HTTPException(status_code=404, detail="Passage not found")
     return passage
 
 
-@router.get("/passages/{passage_id}/translation", response_model=TranslationResponse)
-def get_passage_translation(passage_id: str, db: Session = Depends(get_db)):
+@router.get(
+    "/passages/{passage_id}/translation",
+    response_model=TranslationResponse,
+    dependencies=[Depends(rate_limit("translation", 30))],
+)
+def get_passage_translation(
+    passage_id: str,
+    db: Session = Depends(get_db),
+    identity: Identity = Depends(get_identity),
+):
+    if not identity.can_persist:
+        raise HTTPException(status_code=401, detail="A device id is required for translations.")
     if get_passage(db, passage_id) is None:
         raise HTTPException(status_code=404, detail="Passage not found")
     translation = ensure_translation(db, passage_id)
@@ -416,7 +443,11 @@ def get_passage_stats(
     )
 
 
-@router.post("/gloss", response_model=GlossResponse)
+@router.post(
+    "/gloss",
+    response_model=GlossResponse,
+    dependencies=[Depends(rate_limit("gloss", 120))],
+)
 def post_gloss(body: GlossRequest, db: Session = Depends(get_db)):
     word = body.word.strip()
     if body.passage_id:
@@ -722,7 +753,7 @@ def post_comprehension(
     return {"ok": True, "correct": sum(correct), "total": len(correct), "detail": correct}
 
 
-@router.post("/events")
+@router.post("/events", dependencies=[Depends(rate_limit("events", 60))])
 def post_event(
     body: TrialEventRequest,
     db: Session = Depends(get_db),

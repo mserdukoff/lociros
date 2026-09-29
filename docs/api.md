@@ -1,61 +1,97 @@
 # HTTP API
 
-Base path: `/api`. FastAPI OpenAPI: `http://localhost:8000/docs` when the backend is running.
+Base path: `/api`. FastAPI OpenAPI: `http://localhost:8000/docs` when the backend is running outside production. With `APP_ENV=production`, `/docs`, `/redoc`, and `/openapi.json` are off.
 
-The Next.js origin proxies `/api/*` to the backend at runtime. Passage SSR bypasses the proxy and calls `NLP_BACKEND_URL` directly. In production, Vercel holds that proxy; FastAPI is a separate public origin.
+The Next.js app proxies `/api/*` to the backend through the route handler `frontend/src/app/api/[...path]/route.ts`. The proxy:
+
+- sets `Authorization` from the Supabase session cookie and drops any `Authorization` header the browser sent;
+- returns 404 for `admin/*`, `trial/*`, `auth/google*`, and `auth/magic*`, which the public app never calls (the admin app talks to FastAPI directly from its server).
+
+Passage SSR bypasses the proxy and calls `NLP_BACKEND_URL` directly. In production, Vercel holds that proxy; FastAPI is a separate origin.
 
 ## Headers
 
 | Header | Used by | Notes |
 | ------ | ------- | ----- |
-| `X-Device-Id` | `GET /library`, `GET /passages/{id}/stats`, `POST /feedback`, `GET/POST/DELETE /words`, `POST /generate` (sent by the client; generate does not read it) | Must match `^[A-Za-z0-9_-]{8,64}$`. Invalid or missing → treated as anonymous (default placement A2, no lemma/read history). The browser stores a UUID in `localStorage` as `lociros.device_id`. |
-| `Authorization: Bearer` | signed-in requests | Supabase Auth access token. The Next.js `/api` proxy attaches it from the session cookie. FastAPI verifies it against the project's JWKS. |
+| `X-Device-Id` | Every learner route | Must match `^[A-Za-z0-9_-]{8,64}$`. Invalid or missing → treated as anonymous (default placement A2, no lemma/read history). The browser stores a UUID in `localStorage` as `lociros.device_id`. **Required** (401 without it or a signed-in user) on `POST /generate` and `GET /passages/{id}/translation`, and on the write routes listed below. |
+| `Authorization: Bearer` | signed-in requests | Supabase Auth access token, verified against the project's JWKS (ES256/RS256, audience `authenticated`). FastAPI also still accepts its legacy HS256 token signed with `JWT_SECRET`, in the header or the `lociros_token` cookie. |
 | `Content-Type: application/json` | POST bodies | |
 
-CORS: `CORS_ORIGINS` (default localhost:3000). `PUBLIC_BASE_URL` is always included. Optional `CORS_ORIGIN_REGEX` for Vercel preview hosts. Methods and headers are open (`*`).
+"Identity" below means a signed-in user or a valid `X-Device-Id`. Signed-in lookups use the user id; otherwise the device id.
+
+CORS: `CORS_ORIGINS` (default localhost:3000). `PUBLIC_BASE_URL` is always included. Optional `CORS_ORIGIN_REGEX` for Vercel preview hosts. Credentials are allowed; methods and headers are open (`*`).
 
 ## Endpoints
 
 | Method | Path | Body / query | Success |
 | ------ | ---- | ------------ | ------- |
-| `GET` | `/health` | | `{ "ok": true, "name": "lociros" }` |
+| `GET` | `/health` | | `{ "ok": true, "name": "lociros" }` (also served at `/health` outside `/api`) |
 | `GET` | `/health/ready` | | `{ "ok": true, "name": "lociros", "db": true }` — 500 if the database is down |
-| `GET` | `/me` | Bearer token | `MeResponse` (`authenticated`, `email`, `require_auth`, …) |
-| `DELETE` | `/me` | Bearer token | Deletes the account and learner rows |
-| `POST` | `/auth/session` | Bearer token + `X-Device-Id` | Merges guest device progress into the signed-in user |
+| `GET` | `/me` | optional Bearer + `X-Device-Id` | `MeResponse`: `authenticated`, `email`, `display_name`, `guest`, `show_*` flags, `generate_remaining` (null without an identity), `require_auth`, `admin` |
+| `DELETE` | `/me` | Bearer (required) | Deletes the account, its learner rows, quota, trial events, and magic links |
+| `POST` | `/auth/session` | Bearer (required) + `X-Device-Id` | Merges this browser's guest rows into the signed-in user; records `account_linked` |
 | `POST` | `/auth/logout` | | Clears the legacy FastAPI cookie. Supabase sign-out happens in the browser |
-| `POST` | `/generate` | `{ level, topic, genre?, language }` | **200** cached `PassageResponse`, or **202** `{ job_id, status }` |
-| `GET` | `/generate/{job_id}` | `X-Device-Id` | `GenerateJobResponse` — poll until `completed` or `failed` |
-| `GET` | `/library?language=ja\|ru\|it\|ar` | `X-Device-Id` | `LibraryResponse` (`placed`, `news_notice`, item `source_name` / `source_date`) |
+| `GET` | `/auth/google`, `/auth/google/callback` | | Legacy Google cookie sign-in. **404 in production** |
+| `POST` | `/auth/magic` | `{ email }` | Legacy magic link. Returns `{ ok, link }` (no email is sent). **404 in production** |
+| `GET` | `/auth/magic/callback?token=` | | Consumes a magic link once, sets the cookie, redirects to `/library`. **404 in production** |
+| `POST` | `/generate` | `{ level, topic, genre?, language }` + identity | **200** cached `PassageResponse`, or **202** `GenerateJobResponse`. Rate limited |
+| `GET` | `/generate/{job_id}` | identity that created the job | `GenerateJobResponse` — poll until `completed` or `failed`. 404 for other callers |
+| `GET` | `/library?language=ja\|ru\|it\|ar` | `X-Device-Id` | `LibraryResponse`. With an identity, also schedules today's news passage for that band |
 | `GET` | `/shelf/counts` | | `{ counts: { ja: n, … } }`: passages a reader can open (public, passed calibration, not news), public languages only. Cached ten minutes in-process. The landing page's proof line |
-| `POST` | `/events` | `{ kind, passage_id?, payload? }` + `X-Device-Id` | `{ "ok": true }`. Browser-side funnel events: `landing_view`, `demo_tap`, `start_click`, `placement_start`, `session_start`. **400** for the kinds the API records itself (`placement_done`, `read_complete`, `account_linked`, `comprehension`) |
-| `GET` | `/admin/overview` | Bearer token (admin) | `AdminOverview`: API status, totals, last 7 days, funnel, counts, recent users and jobs. Read by the admin app at `admin.lociros.com` |
-| `GET` | `/trial/metrics?days=30` | Bearer token (admin) | Trial gates plus `funnel`: per-step devices and rates against landing views, 2- and 7-day returns, and `sticky_test` arms |
+| `POST` | `/events` | `{ kind, passage_id?, payload? }` + `X-Device-Id` | `{ "ok": true }`. Browser-side funnel events: `landing_view`, `demo_tap`, `start_click`, `placement_start`, `session_start`. **400** for the kinds the API records itself (`placement_done`, `read_complete`, `account_linked`, `comprehension`). Rate limited |
+| `GET` | `/admin/overview` | Bearer (admin) | `AdminOverview`: API status, totals, last 7 days, funnel, counts, recent users and jobs. Read by the admin app at `admin.lociros.com` |
+| `GET` | `/trial/metrics?days=30` | Bearer (admin) | Trial gates plus `funnel`: per-step devices and rates against landing views, 2- and 7-day returns, and `sticky_test` arms |
 | `GET` | `/placement?language=ja\|ru\|it\|ar` | | Placement passage and questions, without the answer key |
-| `POST` | `/placement` | `{ language, answers }` + `X-Device-Id` | `{ level, correct, total, placed, next_id }`. `next_id` is the passage the result screen opens |
-| `POST` | `/taps` | `{ lemma, language, passage_id? }` + `X-Device-Id` | `{ "ok": true }` |
-| `POST` | `/comprehension` | `{ passage_id, answers }` + `X-Device-Id` | `{ correct, total }` |
-| `GET` | `/passages/{id}` | | `PassageResponse` |
-| `GET` | `/passages/{id}/translation` | | `{ passage_id, translation }` |
+| `POST` | `/placement` | `{ language, answers }` + identity | `{ language, level, correct, total, placed, next_id }`. `next_id` is the passage the result screen opens |
+| `POST` | `/news/save` | `{ passage_id, language, saved }` + identity | `{ ok, saved }`. Saves or unsaves today's news passage |
+| `POST` | `/taps` | `{ lemma, language, passage_id? }` + `X-Device-Id` | `{ "ok": true }` (ignored without an identity) |
+| `POST` | `/comprehension` | `{ passage_id, answers }` + `X-Device-Id` | `{ ok, correct, total, detail }`. `detail` is one boolean per question. 400 unless every question is answered |
+| `GET` | `/passages/{id}` | `?lab=1` for admins | `PassageResponse`. Quarantined passages are 404 unless `lab=1` is sent by a signed-in admin |
+| `GET` | `/passages/{id}/translation` | identity | `{ passage_id, translation }`. Rate limited |
 | `GET` | `/passages/{id}/stats` | `X-Device-Id` | `PassageStats` |
-| `POST` | `/gloss` | `{ word, passage_id? }` | `GlossResponse` |
+| `POST` | `/gloss` | `{ word, passage_id? }` | `GlossResponse`. Rate limited |
 | `POST` | `/feedback` | `{ passage_id, rating }` + `X-Device-Id` | `FeedbackResponse` |
-| `GET` | `/words?language=ja\|ru\|it\|ar` | `X-Device-Id` | `StarredWord[]` |
-| `POST` | `/words` | `{ lemma, gloss?, passage_id?, language? }` + `X-Device-Id` | `StarredWord` |
-| `DELETE` | `/words` | `{ lemma, language }` + `X-Device-Id` | `{ "ok": true }` |
+| `GET` | `/words?language=ja\|ru\|it\|ar` | `X-Device-Id` | `StarredWord[]` (`[]` without an identity) |
+| `POST` | `/words` | `{ lemma, gloss?, passage_id?, language? }` + identity | `StarredWord`. Also creates or refreshes the SM-2 review card |
+| `DELETE` | `/words` | `{ lemma, language }` + identity | `{ "ok": true }` |
+| `GET` | `/words/export.csv?language=` | identity | CSV of saved words |
+| `GET` | `/words/export.apkg?language=` | identity | Anki package of saved words |
+| `GET` | `/review?language=` | `X-Device-Id` | `{ due, cards: ReviewCard[] }` (`{ due: 0, cards: [] }` without an identity) |
+| `POST` | `/review` | `{ card_id, rating }` + identity | Grades one of the caller's cards (`again`, `hard`, `good`, `easy`) and returns the rescheduled `ReviewCard`. 404 for another caller's card |
+| `GET` | `/audio/{id}.mp3` | | Stored passage audio (`audio/mpeg`) |
 
-`GET /library` defaults `language` to `ja` if omitted. `POST /generate` defaults `language` to `ru` if omitted (the UI always sends a language; the shelf defaults to Japanese).
+`language` defaults to `ja` wherever it is optional, including `POST /generate`.
+
+### Rate limits
+
+Per identity (user, else device id, else client IP) in a sliding one-minute window, plus a shared per-IP window five times larger so rotating device ids does not escape it:
+
+| Route | Per identity per minute |
+| ----- | ----------------------- |
+| `POST /generate` | 6 |
+| `GET /passages/{id}/translation` | 30 |
+| `POST /events` | 60 |
+| `POST /gloss` | 120 |
+
+The windows are in process memory. Production runs one API process (`WEB_CONCURRENCY=1`); with more processes each keeps its own window.
+
+`POST /generate` is also capped at `GENERATE_MONTHLY_CAP` new passages per identity per calendar month (default 10), and at `GENERATE_MAX_PENDING` unfinished jobs (default 3). A cache hit on an existing topic does not count. With `REQUIRE_AUTH=true`, it additionally requires a signed-in user.
+
+A translation that is missing or misaligned is generated at most once per passage per hour per process; otherwise the stored text (or 503) comes back.
 
 ### Status codes
 
 | Code | When |
 | ---- | ---- |
-| 400 | `language` is not `ru`, `ja`, `it`, or `ar` on `/library` |
-| 404 | Unknown passage id; Russian, Italian, or Arabic requested while `SHOW_RUSSIAN` / `SHOW_ITALIAN` / `SHOW_ARABIC` is off |
+| 400 | `language` is not `ru`, `ja`, `it`, or `ar`; a write route without an identity; unanswered comprehension questions |
+| 401 | No identity on `/generate` or `/translation`; `REQUIRE_AUTH` on and not signed in; account routes without a user |
+| 403 | Signed in but not in `ADMIN_EMAILS` on admin routes |
+| 404 | Unknown or quarantined passage; Russian, Italian, or Arabic requested while `SHOW_RUSSIAN` / `SHOW_ITALIAN` / `SHOW_ARABIC` is off; legacy auth routes in production |
 | 202 | `/generate` accepted; poll `/generate/{job_id}` |
-| 429 | Too many pending generation jobs for this device/account |
-| 502 | Generation threw after the key was present |
-| 503 | `OPENROUTER_API_KEY` missing on generate; translation still unavailable |
+| 429 | Rate limit, monthly generate cap, or too many pending generation jobs |
+| 503 | Translation unavailable (LLM missing or failed, nothing stored) |
+
+A generation failure (including a missing `OPENROUTER_API_KEY`) is reported on the job: `status: "failed"` with a short `error`. Unexpected exceptions are logged on the server and reported as a generic message. A job left `running` for more than 10 minutes (a worker died) is marked failed.
 
 Error body is FastAPI’s usual `{ "detail": "…" }` (string or validation-error list). The frontend concatenates `detail[].msg` when `detail` is an array.
 
@@ -75,9 +111,11 @@ Error body is FastAPI’s usual `{ "detail": "…" }` (string or validation-erro
 | `level` | `"A1" \| "A2" \| "B1" \| "B2"` | required |
 | `topic` | string | 1–200 chars |
 | `genre` | string or null | optional; UI uses `daily_life`, `travel`, `news`, `folklore`, `work` (max 40). Unknown values are stored but do not add a prompt hint |
-| `language` | `"ru" \| "ja" \| "it"` | default `ru` |
+| `language` | `"ru" \| "ja" \| "it" \| "ar"` | default `ja` |
 
-This call is slow (LLM + morph + optional rewrite + translation). Timeouts on the OpenRouter client are 45s per completion.
+The work (LLM + morph + optional rewrite + translation) runs on a background job, so the request returns 202 quickly and the client polls. Timeouts on the OpenRouter client are 45s per completion. The web client gives up polling after three minutes.
+
+A completed job whose draft failed calibration is quarantined, so its `passage` is `null` on the job response.
 
 ## Passage (`PassageResponse`)
 
@@ -94,11 +132,20 @@ This call is slow (LLM + morph + optional rewrite + translation). Timeouts on th
   "calibration": { "…" },
   "word_count": 86,
   "created_at": "2026-08-31T00:00:00Z",
-  "translation": "In the morning…"
+  "translation": "In the morning…",
+  "shelf_status": "public",
+  "audio_url": null,
+  "audio_cues": [],
+  "series_id": null,
+  "chapter_index": null,
+  "comprehension": [{ "id": "q1", "prompt": "…", "choices": ["…", "…"], "answer_index": 0 }],
+  "source_name": null,
+  "source_url": null,
+  "source_date": null
 }
 ```
 
-`word_count` is the number of `is_word` tokens, not whitespace-separated words.
+`word_count` is the number of `is_word` tokens, not whitespace-separated words. `audio_cues` are `{ start_ms, end_ms, text }` per sentence. `series_id` / `chapter_index` link chapters of one story. `source_*` are set on daily news passages. `comprehension` includes `answer_index`, so the reader can show the right answer after **Check**; it is a self-check, not a graded test.
 
 ### Token
 
@@ -195,12 +242,12 @@ Present on every stored passage.
   "forbidden_pos_rate": 0.0,
   "flags": ["ja:te_iru (て)", "lemma:頑張る=unknown"],
   "warnings": [
-    "Passage still has out-of-level structures. Read the flags; this is a soft-fail."
+    "Corrective rewrite was not closer to level; kept the first draft."
   ]
 }
 ```
 
-Soft-fail passages are still readable. The reader concatenates `warnings` under the article. Japanese unused rate fields (`forbidden_case_rate`, `forbidden_tense_rate`) are stored as `0`. `attempts` is 1 or 2.
+A generated draft that still fails after its rewrite is stored with `shelf_status = "quarantine"`. It is left out of the library, Continue, shelf counts, and `GET /passages/{id}` (404), except for a signed-in admin who sends `?lab=1`. The library also hides any public row whose calibration did not pass. The reader concatenates `warnings` under the article. Japanese unused rate fields (`forbidden_case_rate`, `forbidden_tense_rate`) are stored as `0`. `attempts` is 1 or 2.
 
 ## Library
 
@@ -208,8 +255,11 @@ Soft-fail passages are still readable. The reader concatenates `warnings` under 
 {
   "language": "ja",
   "placement": "A2",
+  "placed": true,
   "next_id": "…",
   "seen_lemmas": 42,
+  "words": [],
+  "news_notice": null,
   "items": [
     {
       "id": "…",
@@ -224,11 +274,20 @@ Soft-fail passages are still readable. The reader concatenates `warnings` under 
       "read": false,
       "recommended": true,
       "new_lemmas": 12,
-      "recycled_lemmas": 40
+      "recycled_lemmas": 40,
+      "new_lemma_pct": 0.23,
+      "series_id": null,
+      "chapter_index": null,
+      "has_audio": false,
+      "source_name": null,
+      "source_url": null,
+      "source_date": null
     }
   ]
 }
 ```
+
+`news_notice` is today's news passage for this band, when one passed its check: `{ passage_id, title, language, level, source_name, source_date, saved, read }`. `placed` is false until the placement read (or a finished passage) sets the band.
 
 `new_lemmas` / `recycled_lemmas` are **token occurrence counts** of content words, not unique lemmas. Sort on the backend: recommended first, then unread, then level, then newest.
 
@@ -246,7 +305,7 @@ Subset used by the reader header, fade-known, starring, and “read next” befo
 
 ## Translation
 
-`GET /passages/{id}/translation` returns the stored English string, or generates, stores, and returns it. 503 if the LLM is missing or fails and nothing was stored. Seeded passages have translations in `seed_translations.py`.
+`GET /passages/{id}/translation` returns the stored English string when it lines up sentence-for-sentence with the passage. Otherwise it generates, stores, and returns a new one, at most once per passage per hour. 503 if the LLM is missing or fails and nothing was stored. Requires an identity. Seeded passages have translations in `seed_translations.py`.
 
 ## Gloss
 
@@ -282,7 +341,13 @@ Without a valid `X-Device-Id`, `placement` and `next_id` are null and lemma coun
 
 ## Words
 
-Saved lemmas from the gloss **Save** control. Requires a valid `X-Device-Id`. Not SRS.
+Saved lemmas from the gloss **Save** control. Writes require an identity.
 
-`POST /words` `{ lemma, gloss?, passage_id?, language? }`. If `passage_id` is set, language is taken from that passage. Saving the same lemma again updates gloss / passage. `DELETE /words` `{ lemma, language }`. `GET /words?language=` returns the same list as `library.words`.
+`POST /words` `{ lemma, gloss?, passage_id?, language? }`. If `passage_id` is set, language is taken from that passage. Saving the same lemma again updates gloss / passage. Each saved lemma also gets an SM-2 card in `learner_cards` (see Review). `DELETE /words` `{ lemma, language }`. `GET /words?language=` returns the same list as `library.words`.
+
+`GET /words/export.csv` and `/words/export.apkg` take `?language=` and download the saved words for that language. The web client fetches them with `X-Device-Id` so guests can export too.
+
+## Review
+
+`GET /review?language=` returns `{ due, cards }`: cards whose `due_at` has passed, each `{ id, lemma, gloss, reading, context, language, due_at }`. `context` is the sentence the word was saved from. `POST /review` `{ card_id, rating }` with `again`, `hard`, `good`, or `easy` reschedules the card by SM-2 and returns it.
 

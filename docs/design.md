@@ -61,7 +61,7 @@ Grammar-colour inks (`--g-*`) are unchanged and remain an opt-in overlay.
 
 Derived states use opacity modifiers, not extra tokens: `text-ink/70 /55 /50 /45 /40`, `hover:bg-paper-raised`, `bg-terracotta/16` (selected word), `border-terracotta/30 bg-terracotta/10` (error panel).
 
-Terracotta on the landing page is the underlines and flags on the drifted draft, its summary line, and the exam seals on both proof sheets. The checked draft’s type is ink only; the pass seal is the terracotta on that sheet. Section labels are ink at 50%, not terracotta.
+Terracotta on the landing page is the underlines and flags on the drifted draft, its summary line, and its failing seal. The checked draft’s type is ink only, and its pass seal is sage (`.seal-pass`). Section labels are ink at 55%, not terracotta.
 
 ## Typography
 
@@ -80,7 +80,7 @@ Type roles are `@utility` classes in `globals.css`, so the scale lives in one pl
 | ----- | --- | ------- |
 | `t-display` | Occasional display line | Literata 450, tracking −0.024em, leading 1.02, balanced |
 | `t-heading` | Section h2, library placement line | Literata 450, tracking −0.016em, leading 1.14 |
-| `t-eyebrow` | Section labels, field legends, topic line, library label | 11 px, caps, tracking 0.18em, ink/50 |
+| `t-eyebrow` | Section labels, field legends, topic line, library label | 12.5 px, weight 500, sentence case (first letter capitalized), tracking 0.01em, ink/55 |
 | `t-quiet` | Text actions (← Library, Restock, toggles) | 13 px, ink/50 → ink on hover |
 
 Sizes in use: landing passage title `2.1 / 2.6rem` (same as the reader); landing section h2 `1.5 / 1.75rem`; library placement `2 / 2.5rem`; reader title `2.1 / 2.6rem`; reader body `1.35 / 1.45rem` at leading 1.85 (2.35 with furigana); gloss surface `1.75rem`; landing lede `1.0625rem`.
@@ -105,7 +105,7 @@ Vertical stacks on the app screens use gaps of **3 / 9 / 12** (12 / 36 / 48 px).
 
 | Element | Radius |
 | ------- | ------ |
-| Cards, segmented controls, buttons, gloss panel | `rounded-card` (6 px) |
+| Cards, segmented controls, buttons, gloss panel | `rounded-card` (8 px) |
 | Band strip | 4 px |
 | Genre chips, feedback pills | `rounded-full` |
 | Clickable word | 3 px |
@@ -116,13 +116,13 @@ Vertical stacks on the app screens use gaps of **3 / 9 / 12** (12 / 36 / 48 px).
 
 - **Segmented** (`segmented.tsx`): one hairline box divided into cells; the active cell inverts to ink. Used for language (shelf header, demo) and CEFR level (restock form).
 - **BandStrip / BandChip** (`band.tsx`): see rationale above.
-- **Primary button** (`btn-primary`): 48 px, ink fill, paper text, 6 px radius. One per screen at most.
+- **Primary button** (`btn-primary`): 48 px, ink fill, paper text, 8 px radius (`--radius-card`). One per screen at most.
 - **Toggles** (reader, demo): underlined 13 px text; pressed = ink text with a stronger underline. `aria-pressed` is set.
 - **Focus**: a global `:focus-visible` outline, 1.5 px ink, 3 px offset.
 
 ## Iconography and motion
 
-No icons. Typographic arrows only (`←`, `→`, `↓`). Transitions are colour and border, 150 ms. `prefers-reduced-motion` collapses them. No page transitions, no skeleton shimmer.
+No icons in the app chrome (shelf, reader, review); the landing page may use line icons and engravings. Typographic arrows only (`←`, `→`, `↓`). Transitions are colour and border, 150 ms. `prefers-reduced-motion` collapses them. No page transitions, no skeleton shimmer.
 
 Three animated elements, all paced rather than decorative:
 
@@ -201,7 +201,7 @@ Unchanged: surface (with reading beside it) → lemma + band chip → morph line
 
 ## Interaction rules
 
-Unchanged from the previous spec (`lociros.language`, `lociros.grammar`, `lociros.furigana`, `lociros.fade`, `lociros.device_id`; abort on language change; one-shot feedback; lazy English). The demo on the landing page keeps its own local state and never calls the API. Post-sign-in redirects land on `/library`. The service worker precaches `/`, `/library`, `/review`; the PWA `start_url` is `/library`.
+Unchanged from the previous spec (`lociros.language`, `lociros.grammar`, `lociros.furigana`, `lociros.fade`, `lociros.device_id`; abort on language change; one-shot feedback; lazy English). The demo on the landing page keeps its own local state and never calls the API. Post-sign-in redirects land on `/library`. The service worker (`public/sw.js`, production only) caches only `/manifest.json` on install. Page navigations and `/api` calls go to the network first; each navigation response is saved and served from cache when offline. Other assets are stale-while-revalidate. The PWA `start_url` is `/library`.
 
 ## Accessibility
 

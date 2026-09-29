@@ -172,7 +172,9 @@ def get_learner(
 ) -> LearnerRow | None:
     ident = _as_identity(identity, device_id)
     query = apply_owner_filter(db.query(LearnerRow), LearnerRow, ident)
-    return query.filter(LearnerRow.language == language).one_or_none()
+    return (
+        query.filter(LearnerRow.language == language).order_by(LearnerRow.id).first()
+    )
 
 
 def get_or_create_learner(
@@ -234,10 +236,14 @@ def record_tap(
         return
     owner_device = ident.device_id or f"user-{ident.user_id}"
     query = apply_owner_filter(db.query(LearnerTapRow), LearnerTapRow, ident)
-    row = query.filter(
-        LearnerTapRow.language == language,
-        LearnerTapRow.lemma == lemma,
-    ).one_or_none()
+    row = (
+        query.filter(
+            LearnerTapRow.language == language,
+            LearnerTapRow.lemma == lemma,
+        )
+        .order_by(LearnerTapRow.id)
+        .first()
+    )
     now = datetime.now(timezone.utc)
     if row is None:
         db.add(
@@ -314,7 +320,11 @@ def ingest_passage(
         )
         existing.add(lemma)
     already_q = apply_owner_filter(db.query(LearnerReadRow), LearnerReadRow, ident)
-    already = already_q.filter(LearnerReadRow.passage_id == passage_id).one_or_none()
+    already = (
+        already_q.filter(LearnerReadRow.passage_id == passage_id)
+        .order_by(LearnerReadRow.id)
+        .first()
+    )
     if already is None:
         db.add(
             LearnerReadRow(
@@ -416,10 +426,14 @@ def star_lemma(
     now = datetime.now(timezone.utc)
     owner_device = ident.device_id or f"user-{ident.user_id}"
     query = apply_owner_filter(db.query(LearnerStarRow), LearnerStarRow, ident)
-    row = query.filter(
-        LearnerStarRow.language == language,
-        LearnerStarRow.lemma == lemma,
-    ).one_or_none()
+    row = (
+        query.filter(
+            LearnerStarRow.language == language,
+            LearnerStarRow.lemma == lemma,
+        )
+        .order_by(LearnerStarRow.id)
+        .first()
+    )
     context = None
     if passage_id:
         passage = db.get(PassageRow, passage_id)
@@ -483,10 +497,14 @@ def unstar_lemma(
 ) -> bool:
     ident = _as_identity(identity, device_id)
     query = apply_owner_filter(db.query(LearnerStarRow), LearnerStarRow, ident)
-    row = query.filter(
-        LearnerStarRow.language == language,
-        LearnerStarRow.lemma == lemma,
-    ).one_or_none()
+    row = (
+        query.filter(
+            LearnerStarRow.language == language,
+            LearnerStarRow.lemma == lemma,
+        )
+        .order_by(LearnerStarRow.id)
+        .first()
+    )
     if row is None:
         return False
     db.delete(row)

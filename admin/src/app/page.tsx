@@ -23,7 +23,8 @@ export default async function AdminPage() {
     return (
       <Gate title="Not configured">
         <p className="text-sm text-ink/60">
-          Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY for this app.
+          Set ADMIN_EMAIL, NEXT_PUBLIC_SUPABASE_URL, and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY for
+          this app.
         </p>
       </Gate>
     );

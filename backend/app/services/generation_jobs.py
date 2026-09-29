@@ -7,7 +7,7 @@ import logging
 import threading
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException
 from sqlalchemy import or_, text
@@ -25,6 +25,10 @@ STATUS_PENDING = "pending"
 STATUS_RUNNING = "running"
 STATUS_COMPLETED = "completed"
 STATUS_FAILED = "failed"
+STALE_RUNNING_SECONDS = 600
+RECLAIM_EVERY_SECONDS = 60
+_last_reclaim = float("-inf")
+_reclaim_lock = threading.Lock()
 
 _stop = threading.Event()
 _threads: list[threading.Thread] = []
@@ -107,8 +111,44 @@ def _lemma_lists(raw: str | None) -> tuple[list[str] | None, list[str] | None]:
     return None, None
 
 
+def reclaim_stale_jobs(db: Session, now: datetime | None = None) -> int:
+    """Fail jobs left `running` by a worker that died mid-generation."""
+    now = now or datetime.now(timezone.utc)
+    cutoff = now - timedelta(seconds=STALE_RUNNING_SECONDS)
+    count = (
+        db.query(GenerationJobRow)
+        .filter(
+            GenerationJobRow.status == STATUS_RUNNING,
+            GenerationJobRow.started_at < cutoff,
+        )
+        .update(
+            {
+                GenerationJobRow.status: STATUS_FAILED,
+                GenerationJobRow.error: "Generation timed out. Try again.",
+                GenerationJobRow.finished_at: now,
+            },
+            synchronize_session=False,
+        )
+    )
+    db.commit()
+    if count:
+        logger.warning("Marked %s stale generation job(s) as failed", count)
+    return count
+
+
+def _maybe_reclaim(db: Session, now: datetime) -> None:
+    global _last_reclaim
+    tick = time.monotonic()
+    with _reclaim_lock:
+        if tick - _last_reclaim < RECLAIM_EVERY_SECONDS:
+            return
+        _last_reclaim = tick
+    reclaim_stale_jobs(db, now)
+
+
 def claim_next_job(db: Session) -> GenerationJobRow | None:
     now = datetime.now(timezone.utc)
+    _maybe_reclaim(db, now)
     if _is_postgres():
         row = db.execute(
             text(
@@ -188,13 +228,13 @@ def _process_job(job_id: str) -> None:
             job.error = str(exc)
             job.finished_at = datetime.now(timezone.utc)
             db.commit()
-    except Exception as exc:
+    except Exception:
         logger.exception("Generation job %s failed", job_id)
         db.rollback()
         job = db.get(GenerationJobRow, job_id)
         if job is not None:
             job.status = STATUS_FAILED
-            job.error = f"Generation failed: {exc}"
+            job.error = "Generation failed. Try again in a moment."
             job.finished_at = datetime.now(timezone.utc)
             db.commit()
     finally:

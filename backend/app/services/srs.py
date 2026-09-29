@@ -31,10 +31,14 @@ def upsert_card(
 ) -> LearnerCardRow:
     owner_device = identity.device_id or f"user-{identity.user_id}"
     query = apply_owner_filter(db.query(LearnerCardRow), LearnerCardRow, identity)
-    row = query.filter(
-        LearnerCardRow.language == language,
-        LearnerCardRow.lemma == lemma,
-    ).one_or_none()
+    row = (
+        query.filter(
+            LearnerCardRow.language == language,
+            LearnerCardRow.lemma == lemma,
+        )
+        .order_by(LearnerCardRow.id)
+        .first()
+    )
     now = datetime.now(timezone.utc)
     if row is None:
         row = LearnerCardRow(
