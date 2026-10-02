@@ -193,15 +193,17 @@ function Folio({
   id,
   masthead = false,
   last = false,
+  className = "",
   children,
 }: {
   id?: string;
   masthead?: boolean;
   last?: boolean;
+  className?: string;
   children: React.ReactNode;
 }) {
   return (
-    <Wrap>
+    <Wrap className={className}>
       <section
         id={id}
         className={`relative grid scroll-mt-4 border-x ${LINE} lg:grid-cols-[3.5rem_minmax(0,1fr)] ${
@@ -697,7 +699,8 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
         </div>
       </Wrap>
 
-      <Folio masthead>
+      {/* Above the sections after it, so the hero's word gloss can hang over them. */}
+      <Folio masthead className="z-20">
         <Rail>Graded readers · A1 to B2</Rail>
         <div className="min-w-0">
         {variant === "prompt" ? (
@@ -773,7 +776,7 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
                 </div>
               ) : (
                 <div className="relative max-w-[36rem]">
-                  <div aria-hidden="true" className="absolute bottom-[14rem] left-5 hidden w-[11rem] lg:block">
+                  <div aria-hidden="true" className="absolute left-5 top-[calc(100%+0.75rem)] hidden w-[11rem] lg:block">
                     <HandArrow kind="hookUp" className="ml-16 h-10 w-12 -scale-x-100" />
                     <HandNote rotate={-4} className="text-[1.35rem] leading-tight text-ink/60">
                       tap any word to open it
@@ -789,12 +792,6 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
                 </div>
               )}
             </div>
-            <Art
-              key={`wash-${lang}`}
-              src={`wash-${lang}`}
-              sizes="768px"
-              className="band-fade mx-auto -mt-6 hidden h-[12rem] w-[48rem] max-w-full object-cover object-[50%_30%] opacity-70 lg:col-span-12 lg:block"
-            />
           </div>
         )}
         <ul
