@@ -5,7 +5,6 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { signOutAccount } from "@/components/auth-panel";
-import { ContinueCard } from "@/components/continue-card";
 import { OnboardingDialog } from "@/components/onboarding-dialog";
 import { SignInDialog, type AuthMode } from "@/components/sign-in-dialog";
 import { ADMIN_URL } from "@/lib/admin-url";
@@ -137,10 +136,6 @@ function Wrap({ children, className = "" }: { children: React.ReactNode; classNa
       {children}
     </div>
   );
-}
-
-function Eyebrow({ children, accent = false }: { children: React.ReactNode; accent?: boolean }) {
-  return <p className={`t-eyebrow ${accent ? "text-terracotta!" : ""}`}>{children}</p>;
 }
 
 /** One brush stroke under the claim, drawn once in the accent. */
@@ -745,7 +740,16 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
               </Item>
               <Item>
                 <div className="mt-7 flex min-h-12 flex-wrap items-center gap-x-7 gap-y-4">
-                  {returning ? null : (
+                  {returning ? (
+                    <Link
+                      href={`/passage/${returning.item.id}`}
+                      data-start
+                      onClick={() => start("hero")}
+                      className="btn-primary px-7"
+                    >
+                      Continue reading →
+                    </Link>
+                  ) : (
                     <Link href="/library" data-start onClick={(e) => begin("hero", e)} className="btn-primary px-7">
                       Start reading
                     </Link>
@@ -754,6 +758,18 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
                     How the check works ↓
                   </a>
                 </div>
+                {returning ? (
+                  <p className="mt-3 text-[13px] text-ink/50">
+                    Next up:{" "}
+                    <span className={`text-ink/75 ${readingFont(returning.language)}`}>
+                      {returning.item.title}
+                    </span>
+                    . Your {returningName} is at {returning.level}.{" "}
+                    <Link href="/library" className="underline decoration-ink/25 underline-offset-4 hover:text-ink">
+                      Open the shelf
+                    </Link>
+                  </p>
+                ) : null}
               </Item>
               {!demo && me?.admin ? (
                 <a href={ADMIN_URL} className="t-quiet mt-4 inline-block">
@@ -763,34 +779,21 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
             </Col>
 
             <div className="relative isolate lg:col-span-7 lg:pl-6 xl:pl-10">
-              {returning ? (
-                <div data-start className="flex max-w-[34rem] flex-col gap-3">
-                  <Eyebrow>Continue</Eyebrow>
-                  <ContinueCard item={returning.item} />
-                  <p className="text-[13px] text-ink/50">
-                    Your {returningName} is at {returning.level}.{" "}
-                    <Link href="/library" className="underline decoration-ink/25 underline-offset-4 hover:text-ink">
-                      Open the shelf
-                    </Link>
-                  </p>
+              <div className="relative max-w-[36rem]">
+                <div aria-hidden="true" className="absolute left-5 top-[calc(100%+0.75rem)] hidden w-[11rem] lg:block">
+                  <HandArrow kind="hookUp" className="ml-16 h-10 w-12 -scale-x-100" />
+                  <HandNote rotate={-4} className="text-[1.35rem] leading-tight text-ink/60">
+                    tap any word to open it
+                  </HandNote>
                 </div>
-              ) : (
-                <div className="relative max-w-[36rem]">
-                  <div aria-hidden="true" className="absolute left-5 top-[calc(100%+0.75rem)] hidden w-[11rem] lg:block">
-                    <HandArrow kind="hookUp" className="ml-16 h-10 w-12 -scale-x-100" />
-                    <HandNote rotate={-4} className="text-[1.35rem] leading-tight text-ink/60">
-                      tap any word to open it
-                    </HandNote>
-                  </div>
-                  <ReaderDemo
-                    key={lang}
-                    lang={lang}
-                    showLanguages={false}
-                    inlineGloss
-                    onFirstTap={() => track("demo_tap", { language: lang })}
-                  />
-                </div>
-              )}
+                <ReaderDemo
+                  key={lang}
+                  lang={lang}
+                  showLanguages={false}
+                  inlineGloss
+                  onFirstTap={() => track("demo_tap", { language: lang })}
+                />
+              </div>
             </div>
           </div>
         )}
