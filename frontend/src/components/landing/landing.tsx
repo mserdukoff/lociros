@@ -32,7 +32,7 @@ import {
 import { Art, HandArrow, HandNote, LineIcon } from "./art";
 import { DEMO } from "./demo-data";
 import { Drift } from "./drift";
-import { DrawnArrow, Float, InkArt, Parallax, Reveal, Stagger, StaggerItem } from "./motion-bits";
+import { DrawnArrow, InkArt, Reveal, Stagger, StaggerItem } from "./motion-bits";
 import { PromptHero } from "./prompt-hero";
 import { ReaderDemo } from "./reader-demo";
 import { SCENES } from "./scenes";
@@ -182,17 +182,15 @@ function Cross({ className = "" }: { className?: string }) {
 
 /**
  * One section of the printed page. The side rules of every section line up,
- * so together they read as a single frame from the masthead to the footer.
+ * so together they read as a single frame from the header to the footer.
  */
 function Folio({
   id,
-  masthead = false,
   last = false,
   className = "",
   children,
 }: {
   id?: string;
-  masthead?: boolean;
   last?: boolean;
   className?: string;
   children: React.ReactNode;
@@ -201,9 +199,9 @@ function Folio({
     <Wrap className={className}>
       <section
         id={id}
-        className={`relative grid scroll-mt-4 border-x ${LINE} lg:grid-cols-[3.5rem_minmax(0,1fr)] ${
-          masthead ? "border-t-2 border-t-ink/80" : "border-t"
-        } ${last ? "border-b" : ""}`}
+        className={`relative grid scroll-mt-4 border-x border-t ${LINE} lg:grid-cols-[3.5rem_minmax(0,1fr)] ${
+          last ? "border-b" : ""
+        }`}
       >
         <Cross className="-left-2 -top-2" />
         <Cross className="-right-2 -top-2" />
@@ -213,7 +211,6 @@ function Folio({
             <Cross className="-bottom-2 -right-2" />
           </>
         ) : null}
-        {masthead ? <div aria-hidden="true" className="col-span-full h-[3px] border-b border-ink/30" /> : null}
         {children}
       </section>
     </Wrap>
@@ -344,15 +341,13 @@ function Cliff({ lang, language, anim }: { lang: LangCode; language: string; ani
   return (
     <figure className="relative">
       {anim ? (
-        <Parallax distance={40}>
-          <InkArt
-            key={lang}
-            src={`cliff-${lang}`}
-            sizes="(min-width: 1024px) 45vw, 95vw"
-            className="cliff-fade aspect-[4/3] w-full"
-            delay={0.1}
-          />
-        </Parallax>
+        <InkArt
+          key={lang}
+          src={`cliff-${lang}`}
+          sizes="(min-width: 1024px) 45vw, 95vw"
+          className="cliff-fade aspect-[4/3] w-full"
+          delay={0.1}
+        />
       ) : (
         <Art
           key={lang}
@@ -362,30 +357,21 @@ function Cliff({ lang, language, anim }: { lang: LangCode; language: string; ani
         />
       )}
       <div aria-hidden="true" className="absolute inset-0 hidden sm:block">
-        {scene.strata.map((s, i) => {
-          const label = (
-            <>
-              <span className="rounded-[4px] bg-paper/85 px-1.5 py-0.5 leading-tight">
-                <span className="block font-display text-[13px] text-ink">{s.level}</span>
-                <span className="block whitespace-nowrap text-[10.5px] tracking-[0.02em] text-ink/50">
-                  {s.label}
-                </span>
+        {scene.strata.map((s) => (
+          <div
+            key={`${lang}-${s.level}`}
+            style={{ top: s.top, right: `calc(100% - ${scene.face} + 0.75rem)` }}
+            className="absolute flex -translate-y-1/2 items-center gap-2.5 text-right"
+          >
+            <span className="rounded-[4px] bg-paper/85 px-1.5 py-0.5 leading-tight">
+              <span className="block font-display text-[13px] text-ink">{s.level}</span>
+              <span className="block whitespace-nowrap text-[10.5px] tracking-[0.02em] text-ink/50">
+                {s.label}
               </span>
-              <span className="h-px w-5 bg-ink/35" />
-            </>
-          );
-          const style = { top: s.top, right: `calc(100% - ${scene.face} + 0.75rem)` };
-          const cls = "absolute flex -translate-y-1/2 items-center gap-2.5 text-right";
-          return anim ? (
-            <Float key={`${lang}-${s.level}`} className={cls} style={style} delay={0.5 + i * 0.15}>
-              {label}
-            </Float>
-          ) : (
-            <div key={s.level} style={style} className={cls}>
-              {label}
-            </div>
-          );
-        })}
+            </span>
+            <span className="h-px w-5 bg-ink/35" />
+          </div>
+        ))}
       </div>
       <figcaption className="sr-only">
         A cliff of carved {language} words, from everyday greetings at the top to older writing at
@@ -695,7 +681,7 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
       </Wrap>
 
       {/* Above the sections after it, so the hero's word gloss can hang over them. */}
-      <Folio masthead className="z-20">
+      <Folio className="z-20">
         <Rail>Graded readers · A1 to B2</Rail>
         <div className="min-w-0">
         {variant === "prompt" ? (
