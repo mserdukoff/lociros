@@ -20,10 +20,10 @@ _TEXTS: dict[str, dict] = {
             "会社で水を飲みました。"
         ),
         "questions": [
-            ("田中さんはどこで新聞を読みましたか。", ["駅", "家", "学校"], 0),
-            ("電車は何時に来ましたか。", ["七時", "八時", "九時"], 1),
+            ("田中さんはどこで新聞を読みましたか。", ["家", "駅", "学校"], 1),
+            ("電車は何時に来ましたか。", ["七時", "九時", "八時"], 2),
             ("田中さんは会社で___を飲みました。", ["水", "牛乳", "お茶"], 0),
-            ("新聞のあと、田中さんはどこへ行きましたか。", ["会社", "市場", "家"], 0),
+            ("新聞のあと、田中さんはどこへ行きましたか。", ["市場", "家", "会社"], 2),
         ],
     },
     "ru": {
@@ -33,10 +33,10 @@ _TEXTS: dict[str, dict] = {
             "Потом Анна пошла домой. Дома она пила чай."
         ),
         "questions": [
-            ("Where was Anna in the morning?", ["at the market", "at school", "at the station"], 0),
-            ("What did Anna buy?", ["bread and water", "tea and milk", "a book"], 0),
+            ("Where was Anna in the morning?", ["at school", "at the station", "at the market"], 2),
+            ("What did Anna buy?", ["tea and milk", "bread and water", "a book"], 1),
             ("Anna bought bread and water, then she went ___.", ["home", "to work", "to the park"], 0),
-            ("What did Anna drink at home?", ["tea", "water", "coffee"], 0),
+            ("What did Anna drink at home?", ["water", "tea", "coffee"], 1),
         ],
     },
     "it": {
@@ -46,9 +46,9 @@ _TEXTS: dict[str, dict] = {
             "Poi Luca è tornato a casa. A casa ha bevuto il tè."
         ),
         "questions": [
-            ("Where did Luca go this morning?", ["to the market", "to the office", "to school"], 0),
-            ("What did Luca buy?", ["bread and water", "tea and milk", "a newspaper"], 0),
-            ("After the market, Luca went ___.", ["home", "to the station", "to work"], 0),
+            ("Where did Luca go this morning?", ["to the office", "to the market", "to school"], 1),
+            ("What did Luca buy?", ["tea and milk", "a newspaper", "bread and water"], 2),
+            ("After the market, Luca went ___.", ["to the station", "home", "to work"], 1),
             ("What did Luca drink at home?", ["tea", "water", "coffee"], 0),
         ],
     },
@@ -59,10 +59,10 @@ _TEXTS: dict[str, dict] = {
             "ثم عاد أحمد إلى البيت. في البيت شرب شاياً."
         ),
         "questions": [
-            ("Where did Ahmad go in the morning?", ["to the market", "to school", "to the station"], 0),
+            ("Where did Ahmad go in the morning?", ["to school", "to the station", "to the market"], 2),
             ("What did Ahmad buy?", ["bread and water", "tea and milk", "a book"], 0),
-            ("After the market, Ahmad went ___.", ["home", "to work", "to the park"], 0),
-            ("What did Ahmad drink at home?", ["tea", "water", "coffee"], 0),
+            ("After the market, Ahmad went ___.", ["to work", "home", "to the park"], 1),
+            ("What did Ahmad drink at home?", ["water", "coffee", "tea"], 2),
         ],
     },
 }

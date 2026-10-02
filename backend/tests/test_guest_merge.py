@@ -73,3 +73,16 @@ def test_new_rows_move_and_duplicates_drop(db):
 
     lemmas = sorted(s.lemma for s in list_stars(db, Identity(user_id=uid, device_id=None), "ja"))
     assert lemmas == ["犬", "猫"]
+
+
+def test_signed_out_browser_does_not_see_merged_rows(db):
+    uid = _user(db)
+    _learner(db, "laptop-0000001", "B2", 1)
+    db.add(LearnerStarRow(device_id="laptop-0000001", language="ja", lemma="猫"))
+    db.commit()
+
+    merge_guest_into_user(db, "laptop-0000001", uid)
+
+    guest = Identity(user_id=None, device_id="laptop-0000001")
+    assert get_learner(db, guest, "ja") is None
+    assert list_stars(db, guest, "ja") == []

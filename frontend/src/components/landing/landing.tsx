@@ -166,6 +166,95 @@ function InkUnderline() {
   );
 }
 
+const LINE = "border-ink/15";
+
+/** A printer's registration mark, centered on the corner it sits at. */
+function Cross({ className = "" }: { className?: string }) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 15 15"
+      className={`art absolute z-10 h-[15px] w-[15px] text-ink/45 ${className}`}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1"
+    >
+      <path d="M7.5 0v15M0 7.5h15" />
+      <circle cx="7.5" cy="7.5" r="3.5" />
+    </svg>
+  );
+}
+
+/**
+ * One section of the printed page. The side rules of every section line up,
+ * so together they read as a single frame from the masthead to the footer.
+ */
+function Folio({
+  id,
+  masthead = false,
+  last = false,
+  children,
+}: {
+  id?: string;
+  masthead?: boolean;
+  last?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <Wrap>
+      <section
+        id={id}
+        className={`relative grid scroll-mt-4 border-x ${LINE} lg:grid-cols-[3.5rem_minmax(0,1fr)] ${
+          masthead ? "border-t-2 border-t-ink/80" : "border-t"
+        } ${last ? "border-b" : ""}`}
+      >
+        <Cross className="-left-2 -top-2" />
+        <Cross className="-right-2 -top-2" />
+        {last ? (
+          <>
+            <Cross className="-bottom-2 -left-2" />
+            <Cross className="-bottom-2 -right-2" />
+          </>
+        ) : null}
+        {masthead ? <div aria-hidden="true" className="col-span-full h-[3px] border-b border-ink/30" /> : null}
+        {children}
+      </section>
+    </Wrap>
+  );
+}
+
+/** The ruled heading band: number, name, and a note on the right. */
+function Strip({ no, title, meta }: { no: string; title: string; meta?: React.ReactNode }) {
+  return (
+    <div
+      className={`col-span-full flex h-11 items-stretch border-b ${LINE} text-[11px] uppercase tracking-[0.18em] text-ink/55`}
+    >
+      <span
+        className={`tnum flex w-14 shrink-0 items-center justify-center border-r ${LINE} font-display text-[14px] tracking-normal text-terracotta`}
+      >
+        {no}
+      </span>
+      <span className="flex items-center px-4 sm:px-5">{title}</span>
+      {meta ? (
+        <span className={`ml-auto hidden items-center border-l ${LINE} px-5 normal-case tracking-[0.04em] sm:flex`}>
+          {meta}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+/** The margin column under a strip's number, with a line set sideways. */
+function Rail({ children }: { children: React.ReactNode }) {
+  return (
+    <div aria-hidden="true" className={`hidden border-r ${LINE} lg:flex lg:flex-col lg:items-center lg:justify-end lg:py-8`}>
+      <span className="rotate-180 text-[10.5px] uppercase tracking-[0.24em] whitespace-nowrap text-ink/40 [writing-mode:vertical-rl]">
+        {children}
+      </span>
+    </div>
+  );
+}
+
 function RatingMark({ id, on }: { id: Rating; on: boolean }) {
   const ring =
     id === "easy"
@@ -357,6 +446,7 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
   const stored = useStoredLanguage();
   const [picked, setLang] = useState<LangCode | null>(null);
   const [me, setMe] = useState<MeResponse | null>(null);
+  const [authReady, setAuthReady] = useState(false);
   const [counts, setCounts] = useState<Partial<Record<LangCode, number>>>({});
   const [returning, setReturning] = useState<Returning | null>(null);
   const [authMode, setAuthMode] = useState<AuthMode | null>(null);
@@ -466,7 +556,7 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
   /** New readers get the onboarding dialog; placed readers and accounts go straight to the shelf. */
   function begin(from: StartFrom, event: React.MouseEvent) {
     start(from);
-    if (signedIn || returning) return;
+    if (!authReady || signedIn || returning) return;
     event.preventDefault();
     setOnboarding(true);
   }
@@ -474,7 +564,8 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
   const refreshMe = useCallback(() => {
     void fetchMe()
       .then(setMe)
-      .catch(() => setMe(null));
+      .catch(() => setMe(null))
+      .finally(() => setAuthReady(true));
   }, []);
 
   useEffect(() => {
@@ -559,7 +650,9 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
                 type="button"
                 onClick={() => setAuthMode("signin")}
                 aria-haspopup="dialog"
-                className="t-quiet text-ink!"
+                aria-hidden={!authReady}
+                tabIndex={authReady ? undefined : -1}
+                className={`t-quiet text-ink! transition-opacity ${authReady ? "" : "invisible opacity-0"}`}
               >
                 Sign in
               </button>
@@ -599,18 +692,20 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
           }
         />
 
-        <DemoBanner />
+        <div className="pb-3 empty:hidden">
+          <DemoBanner />
+        </div>
+      </Wrap>
 
+      <Folio masthead>
+        <Rail>Graded readers · A1 to B2</Rail>
+        <div className="min-w-0">
         {variant === "prompt" ? (
-          <PromptHero lang={lang} onLang={chooseLang} />
+          <div className="px-5 sm:px-10">
+            <PromptHero lang={lang} onLang={chooseLang} />
+          </div>
         ) : (
-          <section className="relative grid items-start gap-10 pb-6 pt-6 lg:grid-cols-12 lg:gap-8 lg:pb-8 lg:pt-8">
-            <Art
-              key={`wash-${lang}`}
-              src={`wash-${lang}`}
-              sizes="640px"
-              className="wash-fade absolute -left-16 bottom-0 z-0 hidden w-[44rem] max-w-none opacity-70 lg:block"
-            />
+          <div className="relative grid items-start gap-10 px-5 pb-6 pt-10 sm:px-10 lg:grid-cols-12 lg:gap-8 lg:pt-12">
             <Col className="relative z-10 lg:col-span-5 lg:pt-6">
               <Item>
                 <p className="t-eyebrow flex items-center gap-3">
@@ -657,20 +752,6 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
                   </a>
                 </div>
               </Item>
-              <Item>
-                <ul className="mt-10 flex max-w-[27rem] flex-col gap-2.5 border-t border-rule/80 pt-5 text-[13.5px] text-ink/65">
-                  {[
-                    { icon: "list", text: `Every word checked by ${ANALYZER[lang]}` },
-                    { icon: "book", text: "Four levels, A1 to B2, one short read to place you" },
-                    { icon: "bookmark", text: "No account to start. Keep your shelf later." },
-                  ].map((fact) => (
-                    <li key={fact.icon} className="flex items-center gap-3">
-                      <LineIcon name={fact.icon} className="h-[18px] w-[18px] text-terracotta/80" />
-                      {fact.text}
-                    </li>
-                  ))}
-                </ul>
-              </Item>
               {!demo && me?.admin ? (
                 <a href={ADMIN_URL} className="t-quiet mt-4 inline-block">
                   Admin
@@ -708,20 +789,43 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
                 </div>
               )}
             </div>
-          </section>
+            <Art
+              key={`wash-${lang}`}
+              src={`wash-${lang}`}
+              sizes="768px"
+              className="band-fade mx-auto -mt-6 hidden h-[12rem] w-[48rem] max-w-full object-cover object-[50%_30%] opacity-70 lg:col-span-12 lg:block"
+            />
+          </div>
         )}
-      </Wrap>
+        <ul
+          className={`grid border-t ${LINE} divide-y divide-ink/15 text-[13.5px] text-ink/65 sm:grid-cols-3 sm:divide-x sm:divide-y-0`}
+        >
+          {[
+            { icon: "list", text: `Every word checked by ${ANALYZER[lang]}` },
+            { icon: "book", text: "Four levels, A1 to B2, one short read to place you" },
+            { icon: "bookmark", text: "No account to start. Keep your shelf later." },
+          ].map((fact, i) => (
+            <li key={fact.icon} className="flex items-start gap-3 px-5 py-4 sm:px-6">
+              <span className="tnum pt-px font-display text-[12px] text-ink/35">{["i", "ii", "iii"][i]}</span>
+              <LineIcon name={fact.icon} className="h-[18px] w-[18px] text-terracotta/80" />
+              <span className="leading-snug">{fact.text}</span>
+            </li>
+          ))}
+        </ul>
+        </div>
+      </Folio>
 
       {variant === "story" ? (
         <Story steps={storySteps} />
       ) : (
         /* ---------- the check ---------- */
-        <section id="check" className="relative scroll-mt-4 border-t border-rule/70 py-16 sm:py-20">
+        <Folio id="check">
+          <Strip no="01" title="The check" meta={`${ANALYZER[lang]} · ${level}`} />
+          <Rail>Checked before you see it</Rail>
           <Section>
-          <Wrap className="grid gap-12 lg:grid-cols-12 lg:gap-10">
-            <div className="lg:col-span-4">
-              <Eyebrow accent>The check</Eyebrow>
-              <h2 className="t-heading mt-4 text-[1.9rem] text-ink sm:text-[2.2rem]">
+          <div className="grid lg:grid-cols-12">
+            <div className={`px-5 pb-6 pt-10 sm:px-10 lg:col-span-4 lg:border-r ${LINE} lg:py-12 lg:pl-10 lg:pr-8`}>
+              <h2 className="t-heading text-[1.9rem] text-ink sm:text-[2.2rem]">
                 {article} {language} passage that failed the check.
               </h2>
               <p className="mt-5 text-[1rem] leading-[1.65] text-ink/70">
@@ -731,27 +835,32 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
               </p>
               <p className="mt-5 text-[13px] leading-relaxed text-ink/50">{KEPT_OUT[lang]}</p>
               {count > 0 ? (
-                <p className="tnum mt-6 border-t border-rule/70 pt-4 text-[14px] text-ink">
-                  {count.toLocaleString()} {language} passages on the shelf, each checked by{" "}
-                  {ANALYZER[lang]}.
-                </p>
+                <div className={`mt-8 border-t ${LINE} pt-5`}>
+                  <p className="tnum font-display text-[2.6rem] leading-none text-ink">
+                    {count.toLocaleString()}
+                  </p>
+                  <p className="mt-2 text-[13px] leading-relaxed text-ink/55">
+                    {language} passages on the shelf, each checked by {ANALYZER[lang]}.
+                  </p>
+                </div>
               ) : null}
             </div>
-            <div className="lg:col-span-8">
+            <div className="px-5 pb-12 pt-4 sm:px-10 lg:col-span-8 lg:py-12">
               <Drift key={lang} lang={lang} />
             </div>
-          </Wrap>
+          </div>
           </Section>
-        </section>
+        </Folio>
       )}
 
       {/* ---------- rate, levels, and the shelf ---------- */}
-      <section id="rate" className="relative scroll-mt-4 border-t border-rule/70 py-16 sm:py-20">
+      <Folio id="rate">
+        <Strip no="02" title="Rate and move forward" meta="A1 · A2 · B1 · B2" />
+        <Rail>Read · rate · move forward</Rail>
         <Section>
-        <Wrap className="grid items-center gap-10 lg:grid-cols-12 lg:gap-10">
-          <div className="lg:col-span-5">
-            <Eyebrow accent>Rate and move forward</Eyebrow>
-            <h2 className="t-heading mt-4 text-[1.9rem] text-ink sm:text-[2.2rem]">
+        <div className="grid items-center overflow-hidden lg:grid-cols-12">
+          <div className="px-5 pt-10 sm:px-10 lg:col-span-5 lg:py-12">
+            <h2 className="t-heading text-[1.9rem] text-ink sm:text-[2.2rem]">
               Rate, and move forward.
             </h2>
             <p className="mt-5 text-[1rem] leading-[1.65] text-ink/70">
@@ -765,21 +874,21 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
               like the rest.
             </p>
           </div>
-          <div className="lg:col-span-7 lg:-mr-10 xl:-mr-20">
+          <div className="lg:col-span-7">
             <Cliff lang={lang} language={language} anim={anim} />
           </div>
-        </Wrap>
+        </div>
 
-        <Wrap className="mt-14 grid items-start gap-12 lg:grid-cols-12 lg:gap-10">
+        <div className={`grid border-t ${LINE} lg:grid-cols-2`}>
           {variant !== "story" ? (
-            <div className="lg:col-span-6">
+            <div className={`flex flex-col justify-center border-b ${LINE} px-5 py-10 sm:px-10 lg:border-b-0 lg:border-r`}>
               <RateDemo key={lang} lang={lang} />
             </div>
           ) : null}
 
           <div
             id="shelf"
-            className={`scroll-mt-8 ${variant === "story" ? "lg:col-span-6 lg:col-start-4" : "lg:col-span-5 lg:col-start-8"}`}
+            className={`scroll-mt-8 px-5 py-10 sm:px-10 ${variant === "story" ? "lg:col-span-2 lg:mx-auto lg:max-w-[36rem]" : ""}`}
           >
             <h3 className="t-heading text-[1.4rem] text-ink">Keep your shelf.</h3>
             <p className="mt-2 text-[14px] leading-relaxed text-ink/60">
@@ -827,15 +936,17 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
               )}
             </div>
           </div>
-        </Wrap>
+        </div>
         </Section>
-      </section>
+      </Folio>
 
       {/* ---------- close ---------- */}
-      <section className="relative overflow-hidden border-t border-rule/70">
+      <Folio last>
+        <Strip no="03" title="Begin" meta={languageList.join(" · ")} />
+        <Rail>Lociros</Rail>
         <Section>
-        <Wrap className="grid items-end gap-8 pt-14 lg:grid-cols-12 lg:gap-10">
-          <div className="relative z-10 pb-10 lg:col-span-5 lg:pb-16">
+        <div className="grid items-end gap-8 overflow-hidden pt-10 lg:grid-cols-12 lg:gap-10 lg:pt-0">
+          <div className="relative z-10 px-5 sm:px-10 lg:col-span-5 lg:py-16">
             <h2 className="t-heading text-[1.6rem] text-ink sm:text-[1.9rem]">
               A calmer, more certain way to read.
             </h2>
@@ -851,7 +962,7 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
               </Link>
             </div>
           </div>
-          <figure className="relative lg:col-span-7 lg:-mr-12 xl:-mr-24">
+          <figure className="relative lg:col-span-7">
             <Art
               key={lang}
               src={`vista-${lang}`}
@@ -863,11 +974,11 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
             </HandNote>
             <Arrow kind="swoopRight" className="absolute bottom-2 left-24 hidden w-10 lg:block" />
           </figure>
-        </Wrap>
+        </div>
         </Section>
-      </section>
+      </Folio>
 
-      <footer className="border-t border-rule/70">
+      <footer>
         <Section>
         <Wrap className="flex flex-wrap items-baseline justify-between gap-x-8 gap-y-2 py-7 text-[12.5px] text-ink/45">
           <span className="inline-flex items-center gap-1.5 font-display text-[15px] text-ink/70">

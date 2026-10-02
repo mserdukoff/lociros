@@ -58,7 +58,8 @@ def apply_owner_filter(query, model, identity: Identity):
     if identity.user_id is not None:
         return query.filter(model.user_id == identity.user_id)
     if identity.device_id:
-        return query.filter(model.device_id == identity.device_id)
+        # Merged rows keep their device_id; a signed-out browser must not see them.
+        return query.filter(model.device_id == identity.device_id, model.user_id.is_(None))
     return query.filter(False)
 
 

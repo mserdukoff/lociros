@@ -96,9 +96,19 @@ function WordsList({
   language: LangCode;
   onRemove: (lemma: string) => void;
 }) {
-  if (words.length === 0) return null;
   const font = readingFont(language);
   const rtl = isRtl(language);
+  if (words.length === 0) {
+    return (
+      <section id="words" className="scroll-mt-8 flex flex-col gap-3">
+        <SectionLabel>Words</SectionLabel>
+        <p className="text-[15px] leading-relaxed text-ink/55">
+          No saved words yet. Tap a word while you read, then choose Save. It shows up here and in
+          review.
+        </p>
+      </section>
+    );
+  }
   return (
     <section id="words" className="scroll-mt-8 flex flex-col gap-3">
       <SectionLabel>Words</SectionLabel>
@@ -428,8 +438,8 @@ export function Shelf() {
         </Link>
       ) : null}
 
-      {library?.words && library.words.length > 0 ? (
-        <WordsList words={library.words} language={language} onRemove={onRemoveWord} />
+      {library && library.placed !== false ? (
+        <WordsList words={library.words ?? []} language={language} onRemove={onRemoveWord} />
       ) : null}
 
       {rest.length > 0 ? (

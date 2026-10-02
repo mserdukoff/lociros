@@ -23,9 +23,9 @@ def test_band_for_score_spreads_four_questions():
 
 
 def test_score_placement_uses_the_answer_key():
-    correct, total, level = score_placement("ja", [0, 1, 0, 0])
+    correct, total, level = score_placement("ja", [1, 2, 0, 2])
     assert (correct, total, level) == (4, 4, "B2")
-    correct, total, level = score_placement("ru", [1, 1, 1, 1])
+    correct, total, level = score_placement("ru", [0, 0, 1, 0])
     assert correct == 0
     assert level == "A1"
 

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEscape } from "@/lib/use-escape";
 import { BandStrip } from "@/components/band";
 import { GlossCard } from "@/components/gloss-card";
 import { Art } from "@/components/landing/art";
@@ -264,6 +265,8 @@ const FEEDBACK: { id: FeedbackRating; label: string }[] = [
 
 export function Reader({ passage }: { passage: Passage }) {
   const [selected, setSelected] = useState<number | null>(null);
+  const closeGloss = useCallback(() => setSelected(null), []);
+  useEscape(selected !== null, closeGloss);
   const [feedback, setFeedback] = useState<FeedbackRating | null>(null);
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
@@ -419,12 +422,12 @@ export function Reader({ passage }: { passage: Passage }) {
       setPlacement(data.placement);
       setStarred(new Set(data.starred_lemmas ?? []));
       if (before && data.placement !== before) {
-        return `This account's ${name} is at ${data.placement}.`;
+        return `Signed in. Your account's ${name} is at ${data.placement}.`;
       }
     } catch {
       /* the account still has this browser's rows */
     }
-    return `This browser's ${name} is on the account.`;
+    return `Saved to your account. Your ${name} level and words now follow you to any device.`;
   }
 
   async function onCheck() {
@@ -564,8 +567,8 @@ export function Reader({ passage }: { passage: Passage }) {
       <Art
         key={passage.language}
         src={`wash-${passage.language}`}
-        className={`wash-fade absolute top-2 w-[34rem] sm:w-[46rem] ${
-          ar ? "-left-[12rem] -scale-x-100 sm:-left-[16rem]" : "-right-[12rem] sm:-right-[16rem]"
+        className={`wash-fade pointer-events-none absolute top-6 hidden w-[30rem] min-[1440px]:block ${
+          ar ? "right-full -mr-[8rem] -scale-x-100" : "left-full -ml-[8rem]"
         }`}
       />
       <header className="relative flex items-center justify-between gap-4">

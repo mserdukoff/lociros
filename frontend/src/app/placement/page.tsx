@@ -1,5 +1,10 @@
+import type { Metadata } from "next";
 import { Suspense } from "react";
 import { PlacementReadView } from "@/components/placement";
+
+export const metadata: Metadata = {
+  title: "Placement",
+};
 
 export default function PlacementPage() {
   return (

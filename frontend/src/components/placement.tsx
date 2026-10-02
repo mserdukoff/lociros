@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useEscape } from "@/lib/use-escape";
 import { BandStrip } from "@/components/band";
 import { GlossCard } from "@/components/gloss-card";
 import { Art } from "@/components/landing/art";
@@ -92,6 +93,8 @@ export function PlacementReadView() {
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<PlacementResult | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
+  const closeGloss = useCallback(() => setSelected(null), []);
+  useEscape(selected !== null, closeGloss);
   const hint = !useTapHintSeen();
   const [starred, setStarred] = useState<Set<string>>(new Set());
   const [savingWord, setSavingWord] = useState(false);
@@ -241,7 +244,7 @@ export function PlacementReadView() {
           <Art
             key={language}
             src={`cliff-${language}`}
-            className="cliff-fade -mb-10 ml-auto mt-4 hidden aspect-[4/3] w-[22rem] sm:block"
+            className="cliff-fade mb-8 ml-auto mt-4 hidden aspect-[4/3] w-[22rem] sm:block"
           />
 
           {result ? (

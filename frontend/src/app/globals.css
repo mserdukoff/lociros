@@ -209,6 +209,14 @@ body {
 }
 
 /* the reader's ink-wash landscape: fades out to the left and below the title */
+/* a horizon strip in its own row; every edge dissolves into the paper */
+.band-fade {
+  mask-image:
+    linear-gradient(to right, transparent, black 25%, black 75%, transparent),
+    linear-gradient(to bottom, transparent, black 25%, black 65%, transparent);
+  mask-composite: intersect;
+}
+
 .wash-fade {
   mask-image:
     linear-gradient(to right, transparent, black 35%, black 80%, transparent),
@@ -393,6 +401,13 @@ article rt {
   outline: 1.5px solid var(--ink);
   outline-offset: 3px;
   border-radius: 3px;
+}
+
+/* Underlined inputs show focus on the rule itself; a boxed outline around a line reads as a bug. */
+.field-line:focus-visible {
+  outline: none;
+  border-radius: 0;
+  box-shadow: 0 1px 0 var(--ink);
 }
 
 @media (prefers-reduced-motion: reduce) {

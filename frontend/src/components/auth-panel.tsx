@@ -45,7 +45,7 @@ function authError(err: unknown): string {
   return raw;
 }
 
-type Mode = "signup" | "signin";
+type Mode = "signup" | "signin" | "reset";
 
 const MODES: { id: Mode; label: string }[] = [
   { id: "signin", label: "Sign in" },
@@ -141,6 +141,8 @@ export function AuthPanel({
     );
   }
 
+  if (layout === "shelf" && me === null) return null;
+
   if (layout === "shelf" && !open) {
     return (
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2 border-y border-rule py-3 text-sm text-ink/55">
@@ -164,6 +166,14 @@ export function AuthPanel({
     try {
       if (!isSupabaseAuth()) {
         throw new Error("Accounts aren't available here yet.");
+      }
+      if (mode === "reset") {
+        const redirectTo = `${window.location.origin}/auth/callback?next=/reset-password`;
+        const { error } = await createClient().auth.resetPasswordForEmail(address, { redirectTo });
+        if (error) throw error;
+        setMode("signin");
+        setNotice(`If ${address} has an account, a reset link is on its way. It opens a page to choose a new password.`);
+        return;
       }
       if (password.length < MIN_PASSWORD) {
         throw new Error(`Use at least ${MIN_PASSWORD} characters for the password.`);
@@ -193,8 +203,10 @@ export function AuthPanel({
   }
 
   const dialog = layout === "dialog";
-  const heading =
-    layout === "inline"
+  const resetting = mode === "reset";
+  const heading = resetting
+    ? "Reset your password"
+    : layout === "inline"
       ? mode === "signup"
         ? "Keep this shelf"
         : "Sign in"
@@ -205,9 +217,10 @@ export function AuthPanel({
         : mode === "signup"
           ? "Create an account"
           : "Sign in";
-  const action = mode === "signup" ? "Create account" : "Sign in";
-  const lede =
-    layout === "inline"
+  const action = resetting ? "Send reset link" : mode === "signup" ? "Create account" : "Sign in";
+  const lede = resetting
+    ? "Enter the email you signed up with. We'll send a link to choose a new password."
+    : layout === "inline"
       ? "Email and a password. You stay on this passage."
       : dialog
         ? mode === "signup"
@@ -232,7 +245,7 @@ export function AuthPanel({
         await submit();
       }}
     >
-      {layout === "shelf" ? (
+      {layout === "shelf" && !resetting ? (
         <p className="text-sm text-ink/55">
           {mode === "signup"
             ? "Create an account to keep progress across devices"
@@ -245,7 +258,7 @@ export function AuthPanel({
           <p className="mt-2 text-sm leading-relaxed text-ink/55">{lede}</p>
         </>
       )}
-      {dialog ? (
+      {dialog && !resetting ? (
         <div className="mt-5">
           <Segmented
             ariaLabel="Account"
@@ -273,6 +286,7 @@ export function AuthPanel({
           required
           className="field-line text-sm!"
         />
+        {resetting ? null : (
         <div className="relative">
           <input
             type={reveal ? "text" : "password"}
@@ -294,10 +308,20 @@ export function AuthPanel({
             {reveal ? "Hide" : "Show"}
           </button>
         </div>
+        )}
         {mode === "signup" ? (
           <p id="password-hint" className="-mt-1 text-[12px] text-ink/45">
             At least {MIN_PASSWORD} characters.
           </p>
+        ) : mode === "signin" ? (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => switchMode("reset")}
+            className="t-quiet -mt-1 self-end text-[12px]!"
+          >
+            Forgot password?
+          </button>
         ) : null}
         {layout === "inline" ? (
           <div className="mt-2 flex items-center gap-6">
@@ -316,7 +340,16 @@ export function AuthPanel({
           </button>
         )}
       </div>
-      {dialog ? null : (
+      {resetting ? (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => switchMode("signin")}
+          className="t-quiet mt-4 self-start text-sm"
+        >
+          ← Back to sign in
+        </button>
+      ) : dialog ? null : (
         <button
           type="button"
           disabled={busy}

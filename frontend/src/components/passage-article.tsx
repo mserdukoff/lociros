@@ -88,6 +88,22 @@ function tokenLook({
   return { reading, colorCls, fadeCls };
 }
 
+/** Marks that may not begin a line (kinsoku), in every script the reader shows. */
+const CLOSING = /^[。、，．・！？!?,.;:…）」』】》〉»)\]،؛؟]+$/u;
+
+/** Index of each non-word token that rides on the word before it, so a line never starts with it. */
+function attachedPunct(tokens: Token[]): boolean[] {
+  const out = new Array<boolean>(tokens.length).fill(false);
+  for (let i = 1; i < tokens.length; i++) {
+    const tok = tokens[i];
+    if (tok.is_word || !CLOSING.test(tok.text)) continue;
+    const prev = tokens[i - 1];
+    if (prev.ws) continue;
+    if (prev.is_word || out[i - 1]) out[i] = true;
+  }
+  return out;
+}
+
 function firstWordIndex(tokens: Token[], ids: number[], sid: number): number | null {
   for (let i = 0; i < tokens.length; i++) {
     if (ids[i] === sid && tokens[i].is_word) return i;
@@ -137,6 +153,32 @@ export function PassageArticle({
   const [hoverSid, setHoverSid] = useState<number | null>(null);
   const ids = sentenceIds != null && sentenceIds.length === tokens.length ? sentenceIds : null;
   const bySentence = sentenceMode && ids != null;
+  const attached = attachedPunct(tokens);
+
+  function punctSpan(i: number) {
+    const token = tokens[i];
+    const sid = ids?.[i] ?? null;
+    const sentenceOn = bySentence && sid != null && sid === focusSentence;
+    const sentenceHover = bySentence && sid != null && hoverSid === sid && !sentenceOn;
+    return (
+      <span
+        key={i}
+        className={sentenceOn ? "sentence-on" : sentenceHover ? "sentence-hot" : ""}
+        onMouseEnter={() => {
+          if (bySentence && sid != null) setHoverSid(sid);
+        }}
+        onClick={() => {
+          if (!bySentence || sid == null) return;
+          const first = firstWordIndex(tokens, ids, sid);
+          if (first == null) return;
+          onSelect(sentenceOn ? null : first);
+        }}
+      >
+        {token.text}
+        {token.ws}
+      </span>
+    );
+  }
 
   return (
     <article
@@ -159,25 +201,10 @@ export function PassageArticle({
           ids[i] === audioSentence;
 
         if (!token.is_word) {
-          return (
-            <span
-              key={i}
-              className={sentenceOn ? "sentence-on" : sentenceHover ? "sentence-hot" : ""}
-              onMouseEnter={() => {
-                if (bySentence && sid != null) setHoverSid(sid);
-              }}
-              onClick={() => {
-                if (!bySentence || sid == null) return;
-                const first = firstWordIndex(tokens, ids, sid);
-                if (first == null) return;
-                onSelect(sentenceOn ? null : first);
-              }}
-            >
-              {token.text}
-              {token.ws}
-            </span>
-          );
+          return attached[i] ? null : punctSpan(i);
         }
+        const trailing: number[] = [];
+        for (let j = i + 1; j < tokens.length && attached[j]; j++) trailing.push(j);
 
         const isOn = !bySentence && selected === i;
         const inChain =
@@ -194,7 +221,7 @@ export function PassageArticle({
           furigana,
         });
         return (
-          <span key={i}>
+          <span key={i} className={trailing.length > 0 ? "whitespace-nowrap" : undefined}>
             <button
               type="button"
               onMouseEnter={() => {
@@ -219,6 +246,7 @@ export function PassageArticle({
               <TokenFace token={token} reading={look.reading} />
             </button>
             {token.ws}
+            {trailing.map(punctSpan)}
           </span>
         );
       })}
