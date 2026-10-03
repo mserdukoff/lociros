@@ -96,7 +96,7 @@ def test_generate_requires_identity(client):
 
 
 def test_generate_applies_monthly_cap_without_require_auth(client, monkeypatch):
-    monkeypatch.setattr(settings, "require_auth", False)
+    monkeypatch.setattr(settings, "require_auth_enabled", False)
     monkeypatch.setattr(settings, "generate_monthly_cap", 1)
     body = {"level": "A2", "language": "ja"}
     first = client.post("/api/generate", json={**body, "topic": "rain"}, headers=DEVICE)

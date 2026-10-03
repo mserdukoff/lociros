@@ -1,5 +1,8 @@
 import { useSyncExternalStore } from "react";
+import { DEVICE_COOKIE } from "./device-cookie";
 import type { LangCode } from "./types";
+
+export { DEVICE_COOKIE };
 
 const DEVICE_KEY = "lociros.device_id";
 const LANG_KEY = "lociros.language";
@@ -10,6 +13,10 @@ export function getDeviceId(): string {
   if (!id || id.length < 8) {
     id = crypto.randomUUID();
     window.localStorage.setItem(DEVICE_KEY, id);
+  }
+  if (!document.cookie.includes(`${DEVICE_COOKIE}=${id}`)) {
+    const secure = window.location.protocol === "https:" ? "; secure" : "";
+    document.cookie = `${DEVICE_COOKIE}=${id}; path=/; max-age=31536000; samesite=lax${secure}`;
   }
   return id;
 }

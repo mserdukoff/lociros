@@ -46,7 +46,15 @@ function useCycleType(words: string[], enabled: boolean): string {
 
 const CHECKS = ["Writing at", "Checking every word against", "Checking the grammar against"];
 
-export function PromptHero({ lang, onLang }: { lang: LangCode; onLang: (next: LangCode) => void }) {
+export function PromptHero({
+  lang,
+  onLang,
+  languages = LANGUAGES,
+}: {
+  lang: LangCode;
+  onLang: (next: LangCode) => void;
+  languages?: typeof LANGUAGES;
+}) {
   const passages = useMemo(() => listDemoPassages(lang).slice(0, 4), [lang]);
   const topics = useMemo(() => passages.map((p) => sentence(p.topic)), [passages]);
   const [picked, setPicked] = useState<Passage | null>(null);
@@ -103,7 +111,7 @@ export function PromptHero({ lang, onLang }: { lang: LangCode; onLang: (next: La
             animated
             ariaLabel="Language"
             size="sm"
-            options={LANGUAGES.map((l) => ({ id: l.id, label: l.label }))}
+            options={languages.map((l) => ({ id: l.id, label: l.label }))}
             value={lang}
             onChange={switchLang}
           />

@@ -79,21 +79,25 @@ Optional side path: **Restock the shelf** → wait 20–40 seconds for constrain
 
 ### Onboarding
 
-There is no signup before reading. The account is offered under the first **Saved.** line ("This stays on this browser. Create an account to keep it."). Leaving the passage dismisses it; it comes back once, after the third finished passage, then stops. It is not shown in the demo, when Supabase Auth is not configured, or to a signed-in reader. Two one-time lines teach the app: **Tap any word.** above the placement passage (gone after the first gloss), and the three-in-a-row rule under the rating pills (gone after the first rating). All three states live in `localStorage`: `lociros.tap_hint`, `lociros.rating_hint`, `lociros.account_prompt`.
+There is no signup before the first passage. With the paywall on, finishing it offers an account right away, and opening a second passage shows the sign-up screen. With the paywall off, the account is offered under the first **Saved.** line ("This stays on this browser. Create an account to keep it."). Leaving the passage dismisses it; it comes back once, after the third finished passage, then stops. It is not shown in the demo, when Supabase Auth is not configured, or to a signed-in reader. Two one-time lines teach the app: **Tap any word.** above the placement passage (gone after the first gloss), and the three-in-a-row rule under the rating pills (gone after the first rating). All three states live in `localStorage`: `lociros.tap_hint`, `lociros.rating_hint`, `lociros.account_prompt`.
 
 ## Scope
 
 | Area | Built |
 | ---- | ----- |
 | Languages | Japanese, Italian, Russian, and Arabic, A1–B2 |
-| Accounts | Optional Supabase Auth (email and password). Guest device id until sign-in |
+| Accounts | Supabase Auth (email and password). A guest reads the placement and one passage, then creates an account. Settings page with profile, password, preferences, data export, and account deletion |
 | Passage length | Russian 400–700 words; Japanese 22–40 short sentences |
 | Failed calibration | Quarantined: stored for review, hidden from the shelf and the reader |
 | Review | SM-2 cards for saved words, CSV and Anki export |
 | Audio | Azure Speech, generated offline for catalog texts |
-| Billing | Not implemented |
+| Billing | Stripe. Seven-day free week with no card, then a monthly or annual subscription (Checkout, customer portal, webhooks). `/pricing`, in-reader paywall, trial notice on the shelf, `/billing/success` |
 
-Not in this repo: billing, official CEFR or JLPT word lists, C1/C2, or languages other than `ru`, `ja`, `it`, and `ar`.
+Not in this repo: official CEFR or JLPT word lists, C1/C2, or languages other than `ru`, `ja`, `it`, and `ar`.
+
+### Plans
+
+One product, two prices: monthly and annual, set in Stripe and mirrored in `NEXT_PUBLIC_PRICE_*` for display. Everything is included in both. The free week starts when an account is created; subscribing during it defers the first charge to the end of the week. Cancelling keeps access to the end of the paid period. A failed renewal keeps the shelf open while Stripe retries. Full refund on request within 14 days of a charge (`/terms#refunds`).
 
 ## Success criteria
 

@@ -27,8 +27,13 @@ CORS: `CORS_ORIGINS` (default localhost:3000). `PUBLIC_BASE_URL` is always inclu
 | ------ | ---- | ------------ | ------- |
 | `GET` | `/health` | | `{ "ok": true, "name": "lociros" }` (also served at `/health` outside `/api`) |
 | `GET` | `/health/ready` | | `{ "ok": true, "name": "lociros", "db": true }` — 500 if the database is down |
-| `GET` | `/me` | optional Bearer + `X-Device-Id` | `MeResponse`: `authenticated`, `email`, `display_name`, `guest`, `show_*` flags, `generate_remaining` (null without an identity), `require_auth`, `admin` |
-| `DELETE` | `/me` | Bearer (required) | Deletes the account, its learner rows, quota, trial events, and magic links |
+| `GET` | `/me` | optional Bearer + `X-Device-Id` | `MeResponse`: `authenticated`, `email`, `display_name`, `guest`, `show_*` flags, `generate_remaining` (null without an identity), `require_auth`, `admin`, `created_at`, and `entitlement` (see below) |
+| `PATCH` | `/me` | `{ display_name }` + Bearer | Updated `MeResponse` |
+| `DELETE` | `/me` | Bearer (required) | Cancels any Stripe subscription immediately, deletes every row the account owns (learner state, words, cards, reads, taps, news saves, events, feedback, generation jobs, quota, model usage, magic links), then the Supabase login |
+| `GET` | `/me/export` | Bearer | JSON download of everything stored for the account |
+| `POST` | `/billing/checkout` | `{ plan: "monthly"\|"annual", return_to? }` + Bearer | `{ url }` for Stripe Checkout. If more than two days of the free week remain, the first charge waits until it ends. 503 if Stripe is not configured. Rate limited |
+| `POST` | `/billing/portal` | Bearer | `{ url }` for the Stripe customer portal. 400 if the account never subscribed |
+| `POST` | `/billing/webhook` | raw Stripe event + `Stripe-Signature` | `{ ok }`. Verified against `STRIPE_WEBHOOK_SECRET`; each event id is applied once |
 | `POST` | `/auth/session` | Bearer (required) + `X-Device-Id` | Merges this browser's guest rows into the signed-in user; records `account_linked` |
 | `POST` | `/auth/logout` | | Clears the legacy FastAPI cookie. Supabase sign-out happens in the browser |
 | `GET` | `/auth/google`, `/auth/google/callback` | | Legacy Google cookie sign-in. **404 in production** |
@@ -38,8 +43,8 @@ CORS: `CORS_ORIGINS` (default localhost:3000). `PUBLIC_BASE_URL` is always inclu
 | `GET` | `/generate/{job_id}` | identity that created the job | `GenerateJobResponse` — poll until `completed` or `failed`. 404 for other callers |
 | `GET` | `/library?language=ja\|ru\|it\|ar` | `X-Device-Id` | `LibraryResponse`. With an identity, also schedules today's news passage for that band |
 | `GET` | `/shelf/counts` | | `{ counts: { ja: n, … } }`: passages a reader can open (public, passed calibration, not news), public languages only. Cached ten minutes in-process. The landing page's proof line |
-| `POST` | `/events` | `{ kind, passage_id?, payload? }` + `X-Device-Id` | `{ "ok": true }`. Browser-side funnel events: `landing_view`, `demo_tap`, `start_click`, `placement_start`, `session_start`. **400** for the kinds the API records itself (`placement_done`, `read_complete`, `account_linked`, `comprehension`). Rate limited |
-| `GET` | `/admin/overview` | Bearer (admin) | `AdminOverview`: API status, totals, last 7 days, funnel, counts, recent users and jobs. Read by the admin app at `admin.lociros.com` |
+| `POST` | `/events` | `{ kind, passage_id?, payload? }` + `X-Device-Id` | `{ "ok": true }`. Browser-side funnel events: `landing_view`, `demo_tap`, `start_click`, `placement_start`, `session_start`, `paywall_view`. **400** for the kinds the API records itself (`placement_done`, `read_complete`, `account_linked`, `comprehension`, `trial_start`, `checkout_start`, `subscribed`, `churned`). `payload` is capped at 2 KB of JSON. Rate limited |
+| `GET` | `/admin/overview` | Bearer (admin) | `AdminOverview`: API status, totals, last 7 days, funnel, revenue (`trial.billing`), top model usage (`llm_usage`), counts, recent users with their plan, and recent jobs. Read by the admin app at `admin.lociros.com` |
 | `GET` | `/trial/metrics?days=30` | Bearer (admin) | Trial gates plus `funnel`: per-step devices and rates against landing views, 2- and 7-day returns, and `sticky_test` arms |
 | `GET` | `/placement?language=ja\|ru\|it\|ar` | | Placement passage and questions, without the answer key |
 | `POST` | `/placement` | `{ language, answers }` + identity | `{ language, level, correct, total, placed, next_id }`. `next_id` is the passage the result screen opens |
@@ -63,6 +68,16 @@ CORS: `CORS_ORIGINS` (default localhost:3000). `PUBLIC_BASE_URL` is always inclu
 
 `language` defaults to `ja` wherever it is optional, including `POST /generate`.
 
+### Paywall
+
+With `PAYWALL_ENABLED` (on by default in production):
+
+- A guest can open `FREE_GUEST_PASSAGES` passages (default 1, counted by finished reads on the device) plus the placement read. Opening another returns **402** `{ "detail": { "code": "signup_required", "message": … } }`.
+- A new account gets a `TRIAL_DAYS` free week (default 7), no card. After it, passages, `/generate`, `/translation`, `POST /review`, and `/news/save` return **402** with `code: "subscription_required"` until a subscription is active.
+- Stripe `active` and `trialing` count as subscribed. `past_due` keeps access while Stripe retries. Admins are always entitled.
+
+`MeResponse.entitlement`: `{ status: "guest"|"trial"|"active"|"grace"|"expired", entitled, paywall, billing_ready, trial_ends_at, trial_days_left, plan, current_period_end, cancel_at_period_end, has_customer }`. The frontend turns a 402 into a redirect to `/pricing` (or the in-page paywall for server-rendered passages).
+
 ### Rate limits
 
 Per identity (user, else device id, else client IP) in a sliding one-minute window, plus a shared per-IP window five times larger so rotating device ids does not escape it:
@@ -73,6 +88,7 @@ Per identity (user, else device id, else client IP) in a sliding one-minute wind
 | `GET /passages/{id}/translation` | 30 |
 | `POST /events` | 60 |
 | `POST /gloss` | 120 |
+| `POST /billing/checkout` | 10 |
 
 The windows are in process memory. Production runs one API process (`WEB_CONCURRENCY=1`); with more processes each keeps its own window.
 
@@ -86,11 +102,13 @@ A translation that is missing or misaligned is generated at most once per passag
 | ---- | ---- |
 | 400 | `language` is not `ru`, `ja`, `it`, or `ar`; a write route without an identity; unanswered comprehension questions |
 | 401 | No identity on `/generate` or `/translation`; `REQUIRE_AUTH` on and not signed in; account routes without a user |
+| 402 | Paywall: `signup_required` (guest past the free passages) or `subscription_required` (free week over) |
+| 413 | Request body over `MAX_BODY_BYTES` (default 256 KB) |
 | 403 | Signed in but not in `ADMIN_EMAILS` on admin routes |
 | 404 | Unknown or quarantined passage; Russian, Italian, or Arabic requested while `SHOW_RUSSIAN` / `SHOW_ITALIAN` / `SHOW_ARABIC` is off; legacy auth routes in production |
 | 202 | `/generate` accepted; poll `/generate/{job_id}` |
 | 429 | Rate limit, monthly generate cap, or too many pending generation jobs |
-| 503 | Translation unavailable (LLM missing or failed, nothing stored) |
+| 503 | Translation unavailable (LLM missing or failed, nothing stored); billing routes when Stripe is not configured |
 
 A generation failure (including a missing `OPENROUTER_API_KEY`) is reported on the job: `status: "failed"` with a short `error`. Unexpected exceptions are logged on the server and reported as a generic message. A job left `running` for more than 10 minutes (a worker died) is marked failed.
 

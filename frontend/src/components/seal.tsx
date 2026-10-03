@@ -19,7 +19,7 @@ function prefersReducedMotion(): boolean {
 
 /**
  * One exam seal for every language. Inscription comes from `SEAL_COPY`;
- * missing languages render PASS / FAIL. Never a creature, never in the gloss.
+ * missing languages render Pass / Fail. Never a creature, never in the gloss.
  */
 export function Seal({
   verdict,

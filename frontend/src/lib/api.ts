@@ -17,15 +17,44 @@ import type {
   PlacementResult,
 } from "./types";
 
+export type PaywallCode = "signup_required" | "subscription_required";
+
+export class PaywallError extends Error {
+  code: PaywallCode;
+  constructor(code: PaywallCode, message: string) {
+    super(message);
+    this.code = code;
+  }
+}
+
+export function pricingHref(next?: string): string {
+  const path =
+    next ?? (typeof window === "undefined" ? "/library" : window.location.pathname + window.location.search);
+  return `/pricing?next=${encodeURIComponent(path)}`;
+}
+
+/** Every 402 lands on the pricing page, which also offers sign-up to guests. */
+function goToPricing() {
+  if (typeof window === "undefined") return;
+  if (window.location.pathname.startsWith("/pricing")) return;
+  window.location.assign(pricingHref());
+}
+
 async function readError(res: Response): Promise<string> {
   try {
     const data = await res.json();
+    if (res.status === 402 && data?.detail?.code) {
+      goToPricing();
+      throw new PaywallError(data.detail.code, data.detail.message ?? "Subscribe to keep reading.");
+    }
     if (typeof data?.detail === "string") return data.detail;
+    if (typeof data?.detail?.message === "string") return data.detail.message;
     if (Array.isArray(data?.detail)) {
       return data.detail.map((d: { msg?: string }) => d.msg).filter(Boolean).join(" ");
     }
     return JSON.stringify(data);
-  } catch {
+  } catch (err) {
+    if (err instanceof PaywallError) throw err;
     return res.statusText;
   }
 }
@@ -325,7 +354,64 @@ export type TrackKind =
   | "demo_tap"
   | "start_click"
   | "placement_start"
-  | "session_start";
+  | "session_start"
+  | "paywall_view";
+
+export type Plan = "monthly" | "annual";
+
+export async function startCheckout(plan: Plan, returnTo?: string): Promise<string> {
+  const res = await fetch("/api/billing/checkout", opts({
+    method: "POST",
+    body: JSON.stringify({ plan, return_to: returnTo ?? null }),
+  }, true));
+  if (!res.ok) {
+    throw new Error(await readError(res));
+  }
+  const data: { url: string } = await res.json();
+  return data.url;
+}
+
+export async function openBillingPortal(): Promise<string> {
+  const res = await fetch("/api/billing/portal", opts({ method: "POST", body: "{}" }, true));
+  if (!res.ok) {
+    throw new Error(await readError(res));
+  }
+  const data: { url: string } = await res.json();
+  return data.url;
+}
+
+export async function updateProfile(displayName: string): Promise<MeResponse> {
+  const res = await fetch("/api/me", opts({
+    method: "PATCH",
+    body: JSON.stringify({ display_name: displayName }),
+  }, true));
+  if (!res.ok) {
+    throw new Error(await readError(res));
+  }
+  return res.json();
+}
+
+export async function deleteAccount(): Promise<void> {
+  const res = await fetch("/api/me", opts({ method: "DELETE" }));
+  if (!res.ok) {
+    throw new Error(await readError(res));
+  }
+}
+
+export async function exportAccount(): Promise<void> {
+  const res = await fetch("/api/me/export", opts({ cache: "no-store" }));
+  if (!res.ok) {
+    throw new Error(await readError(res));
+  }
+  const url = URL.createObjectURL(await res.blob());
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "lociros-data.json";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
 
 /** Fire and forget. `keepalive` lets the request finish while a link navigates away. */
 export function track(kind: TrackKind, payload?: Record<string, string | number | boolean>) {

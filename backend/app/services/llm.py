@@ -9,6 +9,7 @@ from openai import OpenAI
 
 from app.core.config import settings
 from app.services.data import grammar_rules, lemmas_at_or_below
+from app.services.llm_usage import record as record_usage
 
 logger = logging.getLogger(__name__)
 
@@ -195,6 +196,7 @@ Respond ONLY with valid JSON:
         temperature=0.7 if not correction_flags else 0.4,
         timeout=45.0,
     )
+    record_usage(completion)
     content = completion.choices[0].message.content or ""
     data = _parse_json(content)
     title = str(data.get("title") or "").strip()
@@ -230,6 +232,7 @@ def gloss_lemmas(lemmas: list[str], language: str = "ru") -> dict[str, str]:
             temperature=0,
             timeout=30.0,
         )
+        record_usage(completion)
         data = _parse_json(completion.choices[0].message.content or "")
         out: dict[str, str] = {}
         for k, v in data.items():
@@ -269,6 +272,7 @@ Respond ONLY with the English sentences, separated by spaces (not a numbered lis
             temperature=0.2,
             timeout=45.0,
         )
+        record_usage(completion)
         out = (completion.choices[0].message.content or "").strip()
         if out.startswith("```"):
             out = out.strip("`").strip()

@@ -114,6 +114,13 @@ const ICONS: Record<string, React.ReactNode> = {
     </>
   ),
   bookmark: <path d="M6.5 3.5h11v17l-5.5-4-5.5 4z" />,
+  settings: (
+    <>
+      <path d="M4 7h9M17 7h3M4 17h3M11 17h9" />
+      <circle cx="15" cy="7" r="2" />
+      <circle cx="9" cy="17" r="2" />
+    </>
+  ),
   shelf: (
     <>
       <path d="M4.5 4.5v15M8.5 4.5v15" />

@@ -1,4 +1,4 @@
-import type { AdminCount, AdminOverview, FunnelMetrics } from "@/lib/types";
+import type { AdminCount, AdminOverview, BillingMetrics, FunnelMetrics, LlmUsage } from "@/lib/types";
 
 const TIME_ZONE = process.env.ADMIN_TIME_ZONE || "America/New_York";
 
@@ -108,6 +108,80 @@ function Funnel({ funnel }: { funnel: FunnelMetrics }) {
   );
 }
 
+const PRICE_MONTHLY = Number(process.env.ADMIN_PRICE_MONTHLY || "9.99");
+const PRICE_ANNUAL = Number(process.env.ADMIN_PRICE_ANNUAL || "79.99");
+
+function money(value: number): string {
+  return value.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+}
+
+function Revenue({ billing }: { billing: BillingMetrics }) {
+  const monthly = billing.subscribers_by_plan.monthly ?? 0;
+  const annual = billing.subscribers_by_plan.annual ?? 0;
+  const mrr = monthly * PRICE_MONTHLY + (annual * PRICE_ANNUAL) / 12;
+  const stats: [string, string][] = [
+    ["Paying subscribers", n(billing.subscribers)],
+    ["Estimated monthly revenue", money(mrr)],
+    ["In free week", n(billing.in_trial)],
+    ["Payment failing", n(billing.past_due)],
+    ["Trial to paid", pct(billing.trial_to_paid)],
+  ];
+  const flow: [string, number][] = [
+    ["Started a free week", billing.trial_start],
+    ["Opened checkout", billing.checkout_start],
+    ["Subscribed", billing.subscribed],
+    ["Cancelled", billing.churned],
+  ];
+  return (
+    <section>
+      <Heading>Revenue</Heading>
+      <ul className="mt-3 grid grid-cols-2 gap-x-6 gap-y-3 text-sm sm:grid-cols-5">
+        {stats.map(([label, value]) => (
+          <li key={label}>
+            <p className="text-ink/45">{label}</p>
+            <p className="tnum mt-0.5 text-xl text-ink">{value}</p>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-6 text-sm text-ink/45">
+        Accounts in the last {billing.window_days} days. Monthly revenue uses list prices: {monthly} monthly, {annual}{" "}
+        annual.
+      </p>
+      <ul className="mt-2 divide-y divide-rule">
+        {flow.map(([label, value]) => (
+          <li key={label} className="flex justify-between py-1.5 text-sm">
+            <span>{label}</span>
+            <span className="tnum text-ink/55">{n(value)}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function LlmSpend({ rows }: { rows: LlmUsage[] }) {
+  return (
+    <section>
+      <Heading>Model usage this month</Heading>
+      <p className="mt-1 text-sm text-ink/45">Accounts with the most OpenRouter tokens.</p>
+      {rows.length === 0 ? (
+        <p className="mt-3 text-sm text-ink/45">No model calls yet.</p>
+      ) : (
+        <ul className="mt-3 divide-y divide-rule">
+          {rows.map((row) => (
+            <li key={row.account} className="flex justify-between gap-4 py-1.5 text-sm">
+              <span className="truncate">{row.account}</span>
+              <span className="tnum shrink-0 text-ink/55">
+                {n(row.calls)} calls · {n(row.prompt_tokens + row.completion_tokens)} tokens
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 export function Dashboard({ data }: { data: AdminOverview }) {
   const publicLanguages = [
     "Japanese",
@@ -168,7 +242,11 @@ export function Dashboard({ data }: { data: AdminOverview }) {
         </ul>
       </section>
 
+      {data.trial.billing ? <Revenue billing={data.trial.billing} /> : null}
+
       {data.trial.funnel ? <Funnel funnel={data.trial.funnel} /> : null}
+
+      <LlmSpend rows={data.llm_usage ?? []} />
 
       <div className="grid gap-10 sm:grid-cols-3">
         <Counts title="Passages by language" rows={data.passages_by_language} />
@@ -184,6 +262,7 @@ export function Dashboard({ data }: { data: AdminOverview }) {
               <tr className="border-b border-rule">
                 <th className="py-2 pr-4 font-medium">Email</th>
                 <th className="py-2 pr-4 font-medium">Auth</th>
+                <th className="py-2 pr-4 font-medium">Plan</th>
                 <th className="py-2 pr-4 font-medium">Reads</th>
                 <th className="py-2 pr-4 font-medium">Stars</th>
                 <th className="py-2 pr-4 font-medium">Jobs</th>
@@ -195,6 +274,7 @@ export function Dashboard({ data }: { data: AdminOverview }) {
                 <tr key={user.id} className="border-b border-rule/70">
                   <td className="py-2 pr-4">{user.email || user.display_name || `user ${user.id}`}</td>
                   <td className="py-2 pr-4 text-ink/55">{user.has_auth ? "Supabase" : "—"}</td>
+                  <td className="py-2 pr-4 text-ink/55">{user.plan ?? "—"}</td>
                   <td className="tnum py-2 pr-4">{n(user.reads)}</td>
                   <td className="tnum py-2 pr-4">{n(user.stars)}</td>
                   <td className="tnum py-2 pr-4">{n(user.jobs)}</td>

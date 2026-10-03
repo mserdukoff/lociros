@@ -67,9 +67,11 @@ The reading UI is built around that analysis: every word already has lemma, POS,
 
 - Saved words become SM-2 cards. Grade due cards as again, hard, good, or easy.
 
-**Accounts**
+**Accounts and plans**
 
-- Optional. Reading works as a guest (a random device id in `localStorage`). Signing in with Supabase Auth (email and password) moves that progress onto the account.
+- A guest (a random device id in `localStorage`) can take the placement read and one passage. Signing up with Supabase Auth (email and password) moves that progress onto the account and starts a seven-day free week, no card.
+- After the free week, a monthly or annual Stripe subscription keeps the shelf open (`/pricing`, Stripe Checkout, the customer portal from Settings). The paywall is on by default in production and off in development (`PAYWALL_ENABLED`).
+- **Settings (`/settings`)**: name, password, plan and billing, reading preferences, JSON export of everything stored, sign out, and account deletion (cancels the subscription and removes the Supabase login).
 
 **Reader (`/passage/[id]`)**
 
@@ -571,10 +573,20 @@ cd backend
 pytest
 ```
 
-CI (`.github/workflows/ci.yml`) runs the backend tests, the frontend lint and build, and the admin lint and build. The table lists the main files; see [docs/architecture.md](docs/architecture.md#tests) for the rest.
+CI (`.github/workflows/ci.yml`) runs the backend tests; the frontend lint, typecheck, build, and Playwright e2e; and the admin lint and build.
+
+The e2e suite (`frontend/e2e/`) starts the real API on SQLite with the paywall on, and `next start` against it. It covers the guest free passage and sign-up wall, the pricing and checkout flow (Stripe mocked in the browser), the billing portal, legal pages, robots and sitemap, and the security headers:
+
+```bash
+cd frontend
+npm run test:e2e          # builds first; E2E_SKIP_BUILD=1 to reuse .next
+```
+ The table lists the main files; see [docs/architecture.md](docs/architecture.md#tests) for the rest.
 
 | File | Covers |
 | ---- | ------ |
+| `tests/test_billing.py` | Paywall off by default, guest allowance, trial start and expiry, grace on `past_due`, webhook signature, activation, cancel, idempotency, checkout without config, account deletion and export |
+| `tests/test_hardening.py` | Body-size limit, event payload cap, atomic monthly quota, legacy tokens off, per-account model usage |
 | `tests/test_routes_security.py` | Legacy auth off in production, single-use magic links, generate/translation need an identity, monthly cap, admin-only `lab`, stale-job reclaim, rate limits |
 | `tests/test_generation_jobs.py` | Job queue, pending limit |
 | `tests/test_supabase_auth.py`, `tests/test_guest_merge.py`, `tests/test_admin.py` | JWT verification, guest-to-account merge, admin gating |
@@ -643,7 +655,15 @@ Grammar JSON is edited by hand. After changing grammar or vocab, restart the bac
 | `SHOW_ITALIAN` | `true` | Italian on the public shelf. Set `false` to hide it |
 | `SHOW_ARABIC` | `true` | Arabic on the public shelf. Set `false` to hide it |
 | `GENERATE_MONTHLY_CAP` | `10` | Custom passages per account or device per month |
-| `REQUIRE_AUTH` | `false` | `true` limits generation to signed-in accounts (recommended in production) |
+| `REQUIRE_AUTH` | `true` in production, else `false` | Limits generation to signed-in accounts |
+| `PAYWALL_ENABLED` | `true` in production, else `false` | Free week, then a subscription |
+| `TRIAL_DAYS` / `FREE_GUEST_PASSAGES` | `7` / `1` | Free week length; passages a guest can open |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_MONTHLY`, `STRIPE_PRICE_ANNUAL` | empty | Billing. Without the key and monthly price, checkout returns 503 |
+| `STRIPE_AUTOMATIC_TAX` | `true` | Stripe Tax on Checkout |
+| `SUPABASE_SERVICE_ROLE_KEY` | empty | Lets account deletion remove the Supabase login |
+| `SENTRY_DSN` | empty | Error reporting |
+| `NEWS_SCHEDULER` | `true` | Builds daily news in a background thread each hour |
+| `MAX_BODY_BYTES` | `262144` | Request body cap (413 above it) |
 | `ADMIN_EMAILS` | empty | Comma-separated admin emails. Empty means nobody is admin |
 | `AUDIO_DIR` | `backend/audio` | Where catalog MP3s live |
 | `AZURE_SPEECH_KEY` / `AZURE_SPEECH_REGION` | empty | Only used by `scripts/batch_catalog.py` to make audio |
@@ -658,7 +678,11 @@ The full list is in [docs/architecture.md](docs/architecture.md).
 | `NEXT_PUBLIC_SUPABASE_URL` | empty | Supabase Auth project URL |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | empty | Publishable key. Never the secret |
 | `NEXT_PUBLIC_DEMO` | empty | Static catalog + `localStorage` learner. No Python backend. Set to `1` at **build** time only for that mode |
-| `NEXT_PUBLIC_ADMIN_URL` | `https://admin.lociros.com` | Where `/admin` redirects |
+| `NEXT_PUBLIC_SITE_URL` | `https://lociros.com` | Canonical origin for metadata, robots, sitemap |
+| `NEXT_PUBLIC_PRICE_MONTHLY` / `NEXT_PUBLIC_PRICE_ANNUAL` / `NEXT_PUBLIC_PRICE_ANNUAL_NOTE` | `$9.99` / `$79.99` / computed | Display prices on `/pricing`. Keep in step with Stripe |
+| `NEXT_PUBLIC_TRIAL_DAYS` | `7` | Free week length shown in copy. Match the API's `TRIAL_DAYS` |
+| `NEXT_PUBLIC_CONTACT_EMAIL` | `hello@lociros.com` | Support address on legal pages, Settings, and errors |
+| `NEXT_PUBLIC_SENTRY_DSN` | empty | Browser and server error reporting |
 
 **Admin** (`admin/.env.local`): `ADMIN_EMAIL` (required; unset locks everyone out), `NLP_BACKEND_URL`, the two Supabase public variables, optional `ADMIN_TIME_ZONE`.
 
@@ -673,7 +697,7 @@ The full list is in [docs/architecture.md](docs/architecture.md).
 - **Arabic Form I–X mapping** is heuristic on CAMeL وزن patterns. A mis-tagged Form II verb can fail an A1 seed.
 - **Generation cost and latency.** Two completion calls plus gloss plus translation is normal on a fail-then-rewrite path. No streaming.
 - **SQLite.** Fine for a single-user or small demo. Compose uses local Postgres. Production uses Supabase.
-- **Guest vs account.** Catalog reading works without an account. Sign-in (Supabase Auth) keeps placement and lemmas across devices.
+- **Guest vs account.** A guest gets the placement read and one passage; after that an account (and, after the free week, a subscription) is needed. The guest allowance is counted per device id.
 - **Languages.** `ja`, `ru`, `it`, and `ar` are all public. `SHOW_RUSSIAN`, `SHOW_ITALIAN`, and `SHOW_ARABIC` can take one off the shelf again. Adding a language means grammar JSON, vocab/gloss, a morph module, a validator, seed texts, and UI labels.
 
 - **Audio** exists only for catalog texts that `scripts/batch_catalog.py` voiced offline. Generated passages have none.
@@ -693,4 +717,5 @@ Not in this repo: billed accounts, live TTS, or official CEFR/JLPT lists.
 | [docs/api.md](docs/api.md) | Endpoints, headers, payloads, status codes |
 | [docs/nlp-and-cefr.md](docs/nlp-and-cefr.md) | Generation, analyzers, validators, lexicons, kanji |
 | [docs/learner-model.md](docs/learner-model.md) | Device id, placement, new/known counts, next-text ranking |
-| [docs/deploy.md](docs/deploy.md) | Vercel frontend and admin, Supabase Postgres, FastAPI on Lightsail |
+| [docs/deploy.md](docs/deploy.md) | Vercel frontend and admin, Supabase Postgres, FastAPI on Lightsail behind Caddy, Stripe, uptime, errors, backups |
+| [docs/launch.md](docs/launch.md) | Go-live checklist for taking live payments |

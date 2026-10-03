@@ -12,7 +12,15 @@ import { DemoBanner } from "@/components/demo-banner";
 import { AuthPanel } from "@/components/auth-panel";
 import { Art } from "@/components/landing/art";
 import { LogoMark } from "@/components/logo";
-import { exportWords, fetchLibrary, fetchMe, fetchReview, saveNews, unstarWord } from "@/lib/api";
+import {
+  exportWords,
+  fetchLibrary,
+  fetchMe,
+  fetchReview,
+  pricingHref,
+  saveNews,
+  unstarWord,
+} from "@/lib/api";
 import { isDemo } from "@/lib/demo";
 import { hasStoredLanguage, loadLanguage, saveLanguage } from "@/lib/device";
 import {
@@ -80,6 +88,33 @@ function TodayNews({
         </div>
       </div>
     </section>
+  );
+}
+
+/** A quiet line about the free week or a failed payment. Nothing when subscribed. */
+function PlanNotice({ me }: { me: MeResponse | null }) {
+  const ent = me?.entitlement;
+  if (!ent?.paywall) return null;
+  let text: string | null = null;
+  if (ent.status === "trial" && ent.trial_days_left !== null) {
+    text =
+      ent.trial_days_left <= 1
+        ? "Your free week ends today."
+        : `${ent.trial_days_left} days left in your free week.`;
+  } else if (ent.status === "grace") {
+    text = "Your last payment didn't go through. Update your card to keep the shelf open.";
+  } else if (ent.status === "expired") {
+    text = "Your free week is over.";
+  }
+  if (!text) return null;
+  const href = ent.status === "grace" ? "/settings" : pricingHref("/library");
+  return (
+    <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2 rounded-card bg-sage-wash px-4 py-3 text-sm text-ink/70">
+      <p>{text}</p>
+      <Link href={href} className="t-quiet text-ink underline decoration-ink/25 underline-offset-4">
+        {ent.status === "grace" ? "Update card" : "See plans"}
+      </Link>
+    </div>
   );
 }
 
@@ -410,6 +445,8 @@ export function Shelf() {
       </section>
 
       {!isDemo() ? <AuthPanel me={me} onRefresh={refreshMe} /> : null}
+
+      {!isDemo() ? <PlanNotice me={me} /> : null}
 
       {error ? (
         <p className="rounded-card border border-terracotta/30 bg-terracotta/10 px-4 py-3 text-sm text-terracotta">

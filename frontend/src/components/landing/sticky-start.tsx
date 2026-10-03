@@ -7,7 +7,7 @@ import { getDeviceId } from "@/lib/device";
 /**
  * A/B test of a Start reading bar pinned to the bottom of phone screens.
  * Off unless NEXT_PUBLIC_STICKY_START_TEST=1. Browsers are split by device id,
- * and the arm rides on landing_view so the admin funnel can compare how many
+ * and the arm rides on landing_view so the funnel metrics can compare how many
  * of each arm finish placement. Judge it on placement_done, not on clicks.
  */
 export const STICKY_TEST = process.env.NEXT_PUBLIC_STICKY_START_TEST === "1";

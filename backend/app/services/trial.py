@@ -9,9 +9,26 @@ from app.models.db import TrialEventRow
 from app.services.identity import Identity
 
 # Sent by the browser through POST /api/events.
-CLIENT_EVENTS = ("landing_view", "demo_tap", "start_click", "placement_start", "session_start")
+CLIENT_EVENTS = (
+    "landing_view",
+    "demo_tap",
+    "start_click",
+    "placement_start",
+    "session_start",
+    "paywall_view",
+)
 # Written by the API itself, so a browser cannot inflate them.
-SERVER_EVENTS = ("placement_done", "read_complete", "account_linked", "comprehension")
+SERVER_EVENTS = (
+    "placement_done",
+    "read_complete",
+    "account_linked",
+    "comprehension",
+    "trial_start",
+    "checkout_start",
+    "subscribed",
+    "churned",
+)
+BILLING_EVENTS = ("trial_start", "checkout_start", "subscribed", "churned")
 
 FUNNEL_STEPS = (
     ("landing_view", "landing_view"),
@@ -64,6 +81,64 @@ def record_account_linked(db: Session, identity: Identity) -> None:
     )
     if exists is None:
         record_event(db, kind="account_linked", identity=identity)
+
+
+def record_billing_event(
+    db: Session, user_id: int, kind: str, payload: dict | None = None
+) -> None:
+    record_event(
+        db,
+        kind=kind,
+        identity=Identity(user_id=user_id, device_id=None),
+        payload={k: v for k, v in (payload or {}).items() if v is not None} or None,
+    )
+
+
+def billing_metrics(db: Session, days: int = 30, now: datetime | None = None) -> dict:
+    """Trial starts, checkouts, conversions, and churn in the window, plus live subscribers."""
+    from app.models.db import UserRow
+
+    now = now or datetime.now(timezone.utc)
+    cutoff = now - timedelta(days=days)
+    counts = {kind: 0 for kind in BILLING_EVENTS}
+    rows = (
+        db.query(TrialEventRow.kind, TrialEventRow.user_id)
+        .filter(
+            TrialEventRow.created_at >= cutoff,
+            TrialEventRow.kind.in_(BILLING_EVENTS),
+        )
+        .all()
+    )
+    seen: dict[str, set] = {kind: set() for kind in BILLING_EVENTS}
+    for kind, user_id in rows:
+        seen[kind].add(user_id)
+    for kind in BILLING_EVENTS:
+        counts[kind] = len(seen[kind])
+    by_plan: dict[str, int] = {}
+    active = 0
+    trialing = 0
+    past_due = 0
+    for status, plan, trial_end in db.query(
+        UserRow.subscription_status, UserRow.subscription_plan, UserRow.trial_ends_at
+    ).all():
+        if status in ("active", "trialing"):
+            active += 1
+            key = plan or "other"
+            by_plan[key] = by_plan.get(key, 0) + 1
+        elif status == "past_due":
+            past_due += 1
+        elif trial_end is not None and _as_utc(trial_end) > now:
+            trialing += 1
+    starts = counts["trial_start"]
+    return {
+        "window_days": days,
+        **counts,
+        "trial_to_paid": round(counts["subscribed"] / starts, 3) if starts else 0.0,
+        "subscribers": active,
+        "subscribers_by_plan": by_plan,
+        "in_trial": trialing,
+        "past_due": past_due,
+    }
 
 
 def _as_utc(value: datetime) -> datetime:
@@ -230,4 +305,5 @@ def trial_metrics(db: Session, days: int = 30) -> dict:
         "wtp_pass": wtp >= 5,
         "go": second_rate >= 0.4 and too_hard_rate < 0.15 and wtp >= 5,
         "funnel": funnel_metrics(db, days=days),
+        "billing": billing_metrics(db, days=days),
     }

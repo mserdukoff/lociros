@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Caveat, Literata, Noto_Naskh_Arabic, Outfit } from "next/font/google";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { AuthBridge } from "@/components/auth-bridge";
+import { SITE_DESCRIPTION, SITE_URL } from "@/lib/site";
 import "./globals.css";
 
 const outfit = Outfit({
@@ -34,12 +35,26 @@ const caveat = Caveat({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: {
     default: "Lociros — graded readers",
     template: "%s · Lociros",
   },
-  description:
-    "CEFR-calibrated Japanese, Arabic, Italian, and Russian passages. The level is checked by a morphological analyzer, not promised by a prompt. Tap any word for lemma, grammar, and a gloss.",
+  description: SITE_DESCRIPTION,
+  applicationName: "Lociros",
+  openGraph: {
+    type: "website",
+    siteName: "Lociros",
+    title: "Lociros — graded readers",
+    description: SITE_DESCRIPTION,
+    url: "/",
+    locale: "en_US",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Lociros — graded readers",
+    description: SITE_DESCRIPTION,
+  },
   manifest: "/manifest.json",
   icons: {
     icon: [

@@ -10,13 +10,16 @@ const STAMP: Record<LangCode, { text: string; vertical: boolean; font: string }>
   ru: { text: "учиться", vertical: false, font: "font-display italic" },
 };
 
-const LINKS = [
+export const NAV_LINKS = [
   { href: "/library", label: "Library", icon: "shelf" },
   { href: "/review", label: "Review", icon: "review" },
   { href: "/library#words", label: "Vocabulary", icon: "book" },
+  { href: "/settings", label: "Settings", icon: "settings" },
 ] as const;
 
-/** Left rail on wide screens: wordmark, the three places a reader goes, and the language's branch. */
+const LINKS = NAV_LINKS;
+
+/** Left rail on wide screens: wordmark, the places a reader goes, and the language's branch. */
 export function ReaderRail({ language, current }: { language: LangCode; current?: string }) {
   const stamp = STAMP[language];
   return (

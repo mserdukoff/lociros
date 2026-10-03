@@ -8,7 +8,9 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.models.db import GenerationJobRow, PassageRow, SessionLocal, UserRow
 from app.models.schemas import (
+    CheckoutRequest,
     ComprehensionSubmit,
+    ProfileUpdate,
     FeedbackRequest,
     FeedbackResponse,
     GenerateJobResponse,
@@ -45,6 +47,7 @@ from app.services.auth import (
     google_authorize_url,
     clear_auth_cookie,
 )
+from app.services import billing
 from app.services.identity import Identity, merge_guest_into_user, valid_device_id
 from app.services.generate import (
     complete_read,
@@ -140,7 +143,10 @@ def ready(db: Session = Depends(get_db)):
 def me(request: Request, db: Session = Depends(get_db), identity: Identity = Depends(get_identity)):
     user = db.get(UserRow, identity.user_id) if identity.user_id else None
     remaining = remaining_generates(db, identity) if identity.can_persist else 0
+    ent = billing.entitlement(db, identity)
     return MeResponse(
+        entitlement=ent.as_dict(),
+        created_at=user.created_at if user else None,
         authenticated=user is not None,
         user_id=user.id if user else None,
         email=user.email if user else None,
@@ -167,39 +173,74 @@ def delete_me(
     user = db.get(UserRow, identity.user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="Account not found")
-    from app.models.db import (
-        GenerateQuotaRow,
-        LearnerCardRow,
-        LearnerLemmaRow,
-        LearnerReadRow,
-        LearnerRow,
-        LearnerStarRow,
-        LearnerTapRow,
-        LearnerNewsSaveRow,
-        MagicLinkRow,
-        TrialEventRow,
-    )
+    from app.services.account import delete_account
 
-    for model in (
-        LearnerCardRow,
-        LearnerLemmaRow,
-        LearnerStarRow,
-        LearnerReadRow,
-        LearnerRow,
-        LearnerTapRow,
-        LearnerNewsSaveRow,
-        TrialEventRow,
-    ):
-        db.query(model).filter(model.user_id == user.id).delete()
-    db.query(GenerateQuotaRow).filter(
-        GenerateQuotaRow.account_key == f"user:{user.id}"
-    ).delete()
-    if user.email:
-        db.query(MagicLinkRow).filter(MagicLinkRow.email == user.email).delete()
-    db.delete(user)
-    db.commit()
+    delete_account(db, user)
     clear_auth_cookie(response)
     return {"ok": True}
+
+
+@router.patch("/me", response_model=MeResponse)
+def patch_me(
+    body: ProfileUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    identity: Identity = Depends(get_identity),
+):
+    if not identity.user_id:
+        raise HTTPException(status_code=401, detail="Sign in first.")
+    user = db.get(UserRow, identity.user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="Account not found")
+    user.display_name = body.display_name.strip()
+    db.commit()
+    return me(request, db, identity)
+
+
+@router.get("/me/export")
+def export_me(
+    db: Session = Depends(get_db),
+    identity: Identity = Depends(get_identity),
+):
+    if not identity.can_persist:
+        raise HTTPException(status_code=401, detail="Sign in or keep this browser to export.")
+    from app.services.account import export_account
+
+    data = export_account(db, identity)
+    return JSONResponse(
+        data,
+        headers={"Content-Disposition": 'attachment; filename="lociros-data.json"'},
+    )
+
+
+@router.post("/billing/checkout", dependencies=[Depends(rate_limit("checkout", 10))])
+def post_checkout(
+    body: CheckoutRequest,
+    db: Session = Depends(get_db),
+    identity: Identity = Depends(get_identity),
+):
+    url = billing.create_checkout_session(db, identity, body.plan, body.return_to)
+    if identity.user_id:
+        from app.services.trial import record_billing_event
+
+        record_billing_event(db, identity.user_id, "checkout_start", {"plan": body.plan})
+    return {"url": url}
+
+
+@router.post("/billing/portal", dependencies=[Depends(rate_limit("portal", 10))])
+def post_portal(
+    db: Session = Depends(get_db),
+    identity: Identity = Depends(get_identity),
+):
+    return {"url": billing.create_portal_session(db, identity)}
+
+
+@router.post("/billing/webhook")
+async def post_billing_webhook(request: Request, db: Session = Depends(get_db)):
+    payload = await request.body()
+    event = billing.verify_webhook(payload, request.headers.get("stripe-signature"))
+    applied = billing.handle_webhook(db, event)
+    return {"ok": True, "applied": applied}
 
 
 @router.post("/auth/session")
@@ -294,6 +335,7 @@ def post_generate(
             status_code=401,
             detail="A device id is required to generate a custom passage.",
         )
+    billing.require_entitled(db, identity)
     require_language(body.language)
     topic = body.topic.strip()
     cached = find_cached_passage(db, body.level, topic, body.genre, body.language)
@@ -358,15 +400,6 @@ def get_library(
     identity: Identity = Depends(get_identity),
 ):
     require_language(language)
-    if identity.can_persist:
-        learner = get_learner(db, identity, language)
-        level = learner.level if learner is not None else DEFAULT_LEVEL
-        try:
-            from app.services.news import schedule_daily_news
-
-            schedule_daily_news(language, level)
-        except Exception:
-            logger.exception("Could not schedule daily news")
     return list_library(db, language, identity)
 
 
@@ -383,6 +416,8 @@ def get_passage_route(
     passage = get_passage(db, passage_id, include_quarantine=include_quarantine)
     if passage is None:
         raise HTTPException(status_code=404, detail="Passage not found")
+    if not include_quarantine:
+        billing.can_open_passage(db, identity, passage_id)
     return passage
 
 
@@ -398,9 +433,13 @@ def get_passage_translation(
 ):
     if not identity.can_persist:
         raise HTTPException(status_code=401, detail="A device id is required for translations.")
+    billing.require_entitled(db, identity)
     if get_passage(db, passage_id) is None:
         raise HTTPException(status_code=404, detail="Passage not found")
-    translation = ensure_translation(db, passage_id)
+    from app.services.llm_usage import charged_to
+
+    with charged_to(identity.account_key):
+        translation = ensure_translation(db, passage_id)
     if translation is None:
         raise HTTPException(status_code=503, detail="Translation is not available yet.")
     return TranslationResponse(passage_id=passage_id, translation=translation)
@@ -644,6 +683,7 @@ def post_review(
 ):
     if not identity.can_persist:
         raise HTTPException(status_code=400, detail="Nothing to review yet.")
+    billing.require_entitled(db, identity)
     try:
         card = review_card(db, identity, body.card_id, body.rating)
     except KeyError:
@@ -746,6 +786,7 @@ def post_news_save(
     require_language(body.language)
     if not identity.can_persist:
         raise HTTPException(status_code=400, detail="A device id is required to save a passage.")
+    billing.require_entitled(db, identity)
     try:
         saved = save_news(db, identity, body.passage_id, body.language, body.saved)
     except ValueError as exc:

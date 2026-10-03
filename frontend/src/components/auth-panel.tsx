@@ -4,7 +4,6 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Segmented } from "@/components/segmented";
-import { ADMIN_URL } from "@/lib/admin-url";
 import { logout } from "@/lib/api";
 import { saveAccountPrompt } from "@/lib/device";
 import { createClient } from "@/lib/supabase/client";
@@ -108,11 +107,6 @@ export function AuthPanel({
             <Link href={nextPath} className="btn-primary">
               Start reading
             </Link>
-            {me.admin ? (
-              <a href={ADMIN_URL} className="t-quiet">
-                Admin
-              </a>
-            ) : null}
             <button type="button" onClick={() => void signOut()} className="t-quiet">
               Sign out
             </button>
@@ -124,11 +118,9 @@ export function AuthPanel({
       <div className="flex items-baseline justify-between gap-3 border-y border-rule py-3 text-sm text-ink/60">
         <p className="min-w-0 truncate">{me.display_name || me.email}</p>
         <div className="flex shrink-0 items-baseline gap-4">
-          {me.admin ? (
-            <a href={ADMIN_URL} className="t-quiet underline decoration-ink/20 underline-offset-4">
-              Admin
-            </a>
-          ) : null}
+          <Link href="/settings" className="t-quiet underline decoration-ink/20 underline-offset-4">
+            Settings
+          </Link>
           <button
             type="button"
             onClick={() => void signOut()}

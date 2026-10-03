@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import router
 from app.core.config import settings
+from app.core.limits import BodySizeLimit
 from app.models.db import init_db
 from app.services.auth import user_id_from_request
 from app.services.generation_jobs import start_workers, stop_workers
@@ -31,6 +32,46 @@ def validate_production() -> None:
         raise RuntimeError(
             "JWT_SECRET must be a long random value when APP_ENV=production."
         )
+    if settings.paywall:
+        missing = [
+            name
+            for name, value in (
+                ("STRIPE_SECRET_KEY", settings.stripe_secret_key),
+                ("STRIPE_WEBHOOK_SECRET", settings.stripe_webhook_secret),
+                ("STRIPE_PRICE_MONTHLY", settings.stripe_price_monthly),
+            )
+            if not value
+        ]
+        if missing:
+            logger.error(
+                "Paywall is on but billing is not configured (%s). Expired users cannot subscribe.",
+                ", ".join(missing),
+            )
+    if not settings.supabase_service_role_key:
+        logger.warning(
+            "SUPABASE_SERVICE_ROLE_KEY is not set. Account deletion will leave the Supabase login behind."
+        )
+    if not settings.require_auth:
+        logger.warning("REQUIRE_AUTH is off in production. Guests can queue custom passages.")
+
+
+def configure_sentry() -> None:
+    if not settings.sentry_dsn:
+        return
+    try:
+        import sentry_sdk
+    except ImportError:
+        logger.warning("SENTRY_DSN is set but sentry-sdk is not installed.")
+        return
+    sentry_sdk.init(
+        dsn=settings.sentry_dsn,
+        environment=settings.app_env,
+        traces_sample_rate=settings.sentry_traces_sample_rate,
+        send_default_pii=False,
+    )
+
+
+configure_sentry()
 
 
 @asynccontextmanager
@@ -39,6 +80,10 @@ async def lifespan(_app: FastAPI):
     validate_production()
     init_db()
     start_workers()
+    if settings.news_scheduler:
+        from app.services.news import start_news_scheduler
+
+        start_news_scheduler()
     logger.info(
         "Lociros backend ready env=%s db=%s workers=%s",
         settings.app_env,
@@ -53,6 +98,9 @@ async def lifespan(_app: FastAPI):
     )
     yield
     stop_workers()
+    from app.services.news import stop_news_scheduler
+
+    stop_news_scheduler()
 
 
 _docs = not settings.is_production
@@ -72,6 +120,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(BodySizeLimit, max_bytes=settings.max_body_bytes)
 
 
 @app.middleware("http")

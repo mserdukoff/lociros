@@ -7,7 +7,6 @@ import { Fragment, useCallback, useEffect, useState } from "react";
 import { signOutAccount } from "@/components/auth-panel";
 import { OnboardingDialog } from "@/components/onboarding-dialog";
 import { SignInDialog, type AuthMode } from "@/components/sign-in-dialog";
-import { ADMIN_URL } from "@/lib/admin-url";
 import { DemoBanner } from "@/components/demo-banner";
 import { LogoMark } from "@/components/logo";
 import { Segmented } from "@/components/segmented";
@@ -221,7 +220,7 @@ function Folio({
 function Strip({ no, title, meta }: { no: string; title: string; meta?: React.ReactNode }) {
   return (
     <div
-      className={`col-span-full flex h-11 items-stretch border-b ${LINE} text-[11px] uppercase tracking-[0.18em] text-ink/55`}
+      className={`col-span-full flex h-11 items-stretch border-b ${LINE} text-[12.5px] tracking-[0.01em] text-ink/55`}
     >
       <span
         className={`tnum flex w-14 shrink-0 items-center justify-center border-r ${LINE} font-display text-[14px] tracking-normal text-terracotta`}
@@ -230,7 +229,7 @@ function Strip({ no, title, meta }: { no: string; title: string; meta?: React.Re
       </span>
       <span className="flex items-center px-4 sm:px-5">{title}</span>
       {meta ? (
-        <span className={`ml-auto hidden items-center border-l ${LINE} px-5 normal-case tracking-[0.04em] sm:flex`}>
+        <span className={`ml-auto hidden items-center border-l ${LINE} px-5 sm:flex`}>
           {meta}
         </span>
       ) : null}
@@ -242,7 +241,7 @@ function Strip({ no, title, meta }: { no: string; title: string; meta?: React.Re
 function Rail({ children }: { children: React.ReactNode }) {
   return (
     <div aria-hidden="true" className={`hidden border-r ${LINE} lg:flex lg:flex-col lg:items-center lg:justify-end lg:py-8`}>
-      <span className="rotate-180 text-[10.5px] uppercase tracking-[0.24em] whitespace-nowrap text-ink/40 [writing-mode:vertical-rl]">
+      <span className="rotate-180 text-[12px] tracking-[0.02em] whitespace-nowrap text-ink/40 [writing-mode:vertical-rl]">
         {children}
       </span>
     </div>
@@ -434,10 +433,13 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
   const [returning, setReturning] = useState<Returning | null>(null);
   const [authMode, setAuthMode] = useState<AuthMode | null>(null);
   const [onboarding, setOnboarding] = useState(false);
-  // Every language has a hand-authored demo, so the landing page features all
-  // of them; the shelf falls back to Japanese if one is not public yet.
-  const langs = LANGUAGES.map((l) => l.id);
-  const lang = picked ?? stored;
+  // Until /me answers, feature every language (all are public by default).
+  // After that, only the ones the server shows, so nobody picks a language
+  // whose shelf would fall back to Japanese.
+  const offered = me ? enabledLanguages(me) : LANGUAGES;
+  const langs = offered.map((l) => l.id);
+  const wanted = picked ?? stored;
+  const lang: LangCode = langs.includes(wanted) ? wanted : "ja";
   const language = LANGUAGES.find((item) => item.id === lang)?.label ?? "Japanese";
   const level = DEMO[lang].level;
   const article = /^[aeiou]/i.test(language) ? "An" : "A";
@@ -664,7 +666,7 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
           open={onboarding}
           onClose={() => setOnboarding(false)}
           initialLanguage={lang}
-          languages={me ? enabledLanguages(me) : LANGUAGES}
+          languages={offered}
           onSignIn={
             demo
               ? undefined
@@ -686,7 +688,7 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
         <div className="min-w-0">
         {variant === "prompt" ? (
           <div className="px-5 sm:px-10">
-            <PromptHero lang={lang} onLang={chooseLang} />
+            <PromptHero lang={lang} onLang={chooseLang} languages={offered} />
           </div>
         ) : (
           <div className="relative grid items-start gap-10 px-5 pb-6 pt-10 sm:px-10 lg:grid-cols-12 lg:gap-8 lg:pt-12">
@@ -718,7 +720,7 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
                     animated={anim}
                     ariaLabel="Language"
                     size="sm"
-                    options={LANGUAGES.map((l) => ({ id: l.id, label: l.label }))}
+                    options={offered.map((l) => ({ id: l.id, label: l.label }))}
                     value={lang}
                     onChange={chooseLang}
                   />
@@ -757,11 +759,6 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
                   </p>
                 ) : null}
               </Item>
-              {!demo && me?.admin ? (
-                <a href={ADMIN_URL} className="t-quiet mt-4 inline-block">
-                  Admin
-                </a>
-              ) : null}
             </Col>
 
             <div className="relative isolate lg:col-span-7 lg:pl-6 xl:pl-10">

@@ -240,7 +240,23 @@ export type MeResponse = {
   show_arabic: boolean;
   generate_remaining: number | null;
   require_auth: boolean;
-  admin: boolean;
+  entitlement?: Entitlement | null;
+  created_at?: string | null;
+};
+
+export type EntitlementStatus = "guest" | "trial" | "active" | "grace" | "expired";
+
+export type Entitlement = {
+  status: EntitlementStatus;
+  entitled: boolean;
+  paywall: boolean;
+  trial_ends_at: string | null;
+  trial_days_left: number | null;
+  plan: "monthly" | "annual" | "other" | null;
+  current_period_end: string | null;
+  cancel_at_period_end: boolean;
+  has_customer: boolean;
+  billing_ready: boolean;
 };
 
 export type ReviewCard = {

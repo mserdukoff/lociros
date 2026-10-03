@@ -10,6 +10,7 @@ import { GrammarLegend, PassageArticle } from "@/components/passage-article";
 import { ReaderRail } from "@/components/reader-rail";
 import { Seal } from "@/components/seal";
 import { AuthPanel } from "@/components/auth-panel";
+import { MobileNav } from "@/components/mobile-nav";
 import {
   attachGuest,
   fetchLibrary,
@@ -54,12 +55,32 @@ function AccountOffer({
   onRefresh: () => void;
   onSignedIn: () => Promise<string>;
 }) {
-  const [form, setForm] = useState(false);
+  const paywall = me?.entitlement?.paywall === true;
+  const [form, setForm] = useState(paywall);
   const [done, setDone] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState(false);
 
   if (done) return <p className="mt-4 text-[13px] text-ink/70">{done}</p>;
   if (dismissed || me?.authenticated) return null;
+  if (paywall && form) {
+    return (
+      <div className="mt-6 border-t border-rule pt-6">
+        <p className="mb-4 max-w-[26rem] text-[15px] leading-relaxed text-ink/70">
+          That was your free passage. Create an account to keep going: the whole shelf is open
+          for a week, no card needed.
+        </p>
+        <AuthPanel
+          me={me}
+          layout="inline"
+          onRefresh={onRefresh}
+          onCancel={() => setDismissed(true)}
+          onSignedIn={async () => {
+            setDone(await onSignedIn());
+          }}
+        />
+      </div>
+    );
+  }
   if (!form) {
     return (
       <p className="mt-4 flex flex-wrap items-baseline gap-x-4 gap-y-1 text-[13px] text-ink/55">
@@ -401,6 +422,10 @@ export function Reader({ passage }: { passage: Passage }) {
   /** Showing the offer spends it; creating an account also sets it to done. */
   function maybeOfferAccount(finished: number) {
     if (isDemo() || !isSupabaseAuth() || me?.authenticated) return;
+    if (me?.entitlement?.paywall) {
+      setOfferAccount(true);
+      return;
+    }
     const prompt = loadAccountPrompt();
     if (prompt === "pending") {
       saveAccountPrompt("once");
@@ -561,9 +586,10 @@ export function Reader({ passage }: { passage: Passage }) {
       <ReaderRail language={passage.language} current="/library" />
     <div
       className={`relative mx-auto flex w-full max-w-[47rem] flex-col px-5 pt-7 sm:px-8 sm:pt-9 ${
-        glossOpen ? "pb-[min(40rem,80vh)]" : "pb-16"
+        glossOpen ? "pb-[min(40rem,80vh)]" : "pb-28 lg:pb-16"
       }`}
     >
+      <MobileNav />
       <Art
         key={passage.language}
         src={`wash-${passage.language}`}

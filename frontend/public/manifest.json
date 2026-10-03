@@ -3,8 +3,8 @@
   "short_name": "Lociros",
   "start_url": "/library",
   "display": "standalone",
-  "background_color": "#F8F4EB",
-  "theme_color": "#1F2F4B",
+  "background_color": "#f4efe6",
+  "theme_color": "#1c2538",
   "description": "CEFR-calibrated Japanese, Arabic, Italian, and Russian graded readers",
   "icons": [
     {

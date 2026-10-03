@@ -1,7 +1,8 @@
+import json
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 CefrLevel = Literal["A1", "A2", "B1", "B2"]
 LangCode = Literal["ru", "ja", "it", "ar"]
@@ -324,6 +325,17 @@ class MeResponse(BaseModel):
     generate_remaining: int | None = None
     require_auth: bool = False
     admin: bool = False
+    entitlement: dict | None = None
+    created_at: datetime | None = None
+
+
+class CheckoutRequest(BaseModel):
+    plan: Literal["monthly", "annual"] = "monthly"
+    return_to: str | None = Field(default=None, max_length=300)
+
+
+class ProfileUpdate(BaseModel):
+    display_name: str = Field(..., min_length=1, max_length=80)
 
 
 class MagicLinkRequest(BaseModel):
@@ -352,8 +364,15 @@ class ComprehensionSubmit(BaseModel):
 
 class TrialEventRequest(BaseModel):
     kind: str = Field(..., min_length=1, max_length=40)
-    passage_id: str | None = None
+    passage_id: str | None = Field(default=None, max_length=80)
     payload: dict | None = None
+
+    @field_validator("payload")
+    @classmethod
+    def _small_payload(cls, value: dict | None) -> dict | None:
+        if value is not None and len(json.dumps(value, default=str)) > 2048:
+            raise ValueError("payload is too large")
+        return value
 
 
 class AdminCount(BaseModel):
@@ -370,6 +389,7 @@ class AdminUserRow(BaseModel):
     reads: int = 0
     stars: int = 0
     jobs: int = 0
+    plan: str | None = None
 
 
 class AdminJobRow(BaseModel):
@@ -393,5 +413,6 @@ class AdminOverview(BaseModel):
     jobs_by_status: list[AdminCount]
     activity_7d: dict[str, int]
     trial: dict
+    llm_usage: list[dict] = []
     recent_users: list[AdminUserRow]
     recent_jobs: list[AdminJobRow]

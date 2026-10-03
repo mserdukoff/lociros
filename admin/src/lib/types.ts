@@ -11,6 +11,7 @@ export type AdminUser = {
   reads: number;
   stars: number;
   jobs: number;
+  plan?: string | null;
 };
 
 export type AdminJob = {
@@ -44,6 +45,27 @@ export type TrialMetrics = {
   wtp_pass: boolean;
   go: boolean;
   funnel?: FunnelMetrics;
+  billing?: BillingMetrics;
+};
+
+export type BillingMetrics = {
+  window_days: number;
+  trial_start: number;
+  checkout_start: number;
+  subscribed: number;
+  churned: number;
+  trial_to_paid: number;
+  subscribers: number;
+  subscribers_by_plan: Record<string, number>;
+  in_trial: number;
+  past_due: number;
+};
+
+export type LlmUsage = {
+  account: string;
+  calls: number;
+  prompt_tokens: number;
+  completion_tokens: number;
 };
 
 export type AdminOverview = {
@@ -65,6 +87,7 @@ export type AdminOverview = {
   jobs_by_status: AdminCount[];
   activity_7d: Record<string, number>;
   trial: TrialMetrics;
+  llm_usage?: LlmUsage[];
   recent_users: AdminUser[];
   recent_jobs: AdminJob[];
 };

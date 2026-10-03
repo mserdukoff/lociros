@@ -122,6 +122,69 @@ def schedule_daily_news(language: str, level: str) -> None:
         ).start()
 
 
+def active_bands(db: Session, days: int = 14) -> set[tuple[str, str]]:
+    """(language, level) pairs with a placed learner active in the last `days`."""
+    from datetime import timedelta
+
+    from app.models.db import LearnerRow
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    rows = (
+        db.query(LearnerRow.language, LearnerRow.level)
+        .filter(LearnerRow.placed == 1, LearnerRow.updated_at >= cutoff)
+        .distinct()
+        .all()
+    )
+    shown = {
+        "ja": True,
+        "ru": settings.show_russian,
+        "it": settings.show_italian,
+        "ar": settings.show_arabic,
+    }
+    return {(lang, level) for lang, level in rows if shown.get(lang)}
+
+
+def schedule_all_news() -> int:
+    db = SessionLocal()
+    try:
+        bands = active_bands(db)
+    finally:
+        db.close()
+    for language, level in sorted(bands):
+        try:
+            schedule_daily_news(language, level)
+        except Exception:
+            logger.exception("Could not schedule news for %s %s", language, level)
+    return len(bands)
+
+
+_scheduler_stop = threading.Event()
+_scheduler: threading.Thread | None = None
+
+
+def start_news_scheduler(interval_seconds: float = 3600) -> None:
+    """Build each day's news in the background instead of on a library request."""
+    global _scheduler
+    if _scheduler is not None and _scheduler.is_alive():
+        return
+    _scheduler_stop.clear()
+
+    def loop() -> None:
+        while not _scheduler_stop.is_set():
+            try:
+                schedule_all_news()
+            except Exception:
+                logger.exception("News scheduler tick failed")
+            _scheduler_stop.wait(interval_seconds)
+
+    _scheduler = threading.Thread(target=loop, daemon=True, name="news-scheduler")
+    _scheduler.start()
+
+
+def stop_news_scheduler() -> None:
+    _scheduler_stop.set()
+
+
 def _mark(db: Session, issue_id: int, status: str, **fields) -> None:
     issue = db.get(NewsIssueRow, issue_id)
     if issue is None:
@@ -151,14 +214,17 @@ def _build_issue(issue_id: int) -> None:
         issue.source_name = lead["source"]
         issue.source_url = lead["url"]
         db.commit()
-        passage = generate_passage(
-            db,
-            issue.level,
-            lead["title"],
-            "news",
-            issue.language,
-            news_brief=f"Date: {lead['date']}\n{lead['brief']}",
-        )
+        from app.services.llm_usage import charged_to
+
+        with charged_to("system:news"):
+            passage = generate_passage(
+                db,
+                issue.level,
+                lead["title"],
+                "news",
+                issue.language,
+                news_brief=f"Date: {lead['date']}\n{lead['brief']}",
+            )
         if not passage.calibration.passed:
             _mark(db, issue_id, "skipped")
             return

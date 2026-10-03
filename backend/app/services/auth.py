@@ -105,9 +105,16 @@ def get_or_create_from_auth(
         if display_name and not row.display_name:
             row.display_name = display_name
             changed = True
-    if changed:
+    from app.services.billing import ensure_trial
+
+    started = ensure_trial(row)
+    if changed or started:
         db.commit()
         db.refresh(row)
+    if started:
+        from app.services.trial import record_billing_event
+
+        record_billing_event(db, row.id, "trial_start")
     return row
 
 
@@ -134,6 +141,8 @@ def user_id_from_request(request: Request) -> int | None:
             return get_or_create_from_auth(db, auth_id, email, display).id
         finally:
             db.close()
+    if not settings.legacy_tokens:
+        return None
     return decode_token(token)
 
 

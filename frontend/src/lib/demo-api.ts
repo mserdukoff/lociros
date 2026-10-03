@@ -38,7 +38,6 @@ export async function fetchMe(): Promise<MeResponse> {
     show_arabic: true,
     generate_remaining: null,
     require_auth: false,
-    admin: false,
   };
 }
 

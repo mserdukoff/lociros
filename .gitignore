@@ -15,3 +15,5 @@ backend/audio/
 *.mp3
 .vercel
 .env.local
+
+.tmp-ref/

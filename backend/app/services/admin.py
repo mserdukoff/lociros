@@ -21,7 +21,19 @@ from app.models.db import (
 )
 from app.models.schemas import AdminCount, AdminJobRow, AdminOverview, AdminUserRow
 from app.services.identity import Identity
+from app.services.llm_usage import top_accounts
 from app.services.trial import trial_metrics
+
+
+def _plan_label(user: UserRow) -> str:
+    from app.services.billing import user_entitlement
+
+    if is_admin_user(user):
+        return "admin"
+    ent = user_entitlement(user)
+    if ent.status == "active" and user.subscription_plan:
+        return user.subscription_plan
+    return ent.status
 
 
 def is_admin_user(user: UserRow | None) -> bool:
@@ -151,6 +163,7 @@ def admin_overview(db: Session) -> AdminOverview:
             or 0,
         },
         trial=trial_metrics(db, days=30),
+        llm_usage=top_accounts(db),
         recent_users=[
             AdminUserRow(
                 id=row.id,
@@ -161,6 +174,7 @@ def admin_overview(db: Session) -> AdminOverview:
                 reads=int(reads_by_user.get(row.id) or 0),
                 stars=int(stars_by_user.get(row.id) or 0),
                 jobs=int(jobs_by_user.get(row.id) or 0),
+                plan=_plan_label(row),
             )
             for row in users
         ],

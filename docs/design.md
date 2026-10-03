@@ -173,7 +173,7 @@ Language and level are segmented controls (level cells: serif band + hint). Topi
 
 ### Reader (`/passage/[id]`)
 
-From `lg`, a fixed left rail (`reader-rail.tsx`): wordmark, **Library**, **Review**, **Vocabulary** (the library's words list), then the passage language's ink-wash branch (pine, date palm, olive, birch) and a small terracotta stamp (学ぶ set vertically, تعلّم, imparare, учиться). The rail has no Stats or Settings links because those pages do not exist.
+From `lg`, a fixed left rail (`reader-rail.tsx`): wordmark, **Library**, **Review**, **Vocabulary** (the library's words list), then the passage language's ink-wash branch (pine, date palm, olive, birch) and a small terracotta stamp (学ぶ set vertically, تعلّم, imparare, учиться). The rail ends with **Settings**. Below `lg`, the same links sit in a fixed bottom bar (`mobile-nav.tsx`) on the library, review, and reader pages.
 
 Behind the title block, the language's ink-wash landscape (`wash-{lang}`: Fuji, desert city, Tuscan hill town, river church) fades out on every side (`wash-fade`); for Arabic it is mirrored to the left with the seal. The header and the sheet are positioned so they paint over it.
 
@@ -213,7 +213,7 @@ Unchanged from the previous spec (`lociros.language`, `lociros.grammar`, `lociro
 
 ## What not to add
 
-- Dark mode, gradient stripes, hard or cool-grey shadows, coloured CEFR badges, progress rings, creature mascots, testimonials, pricing.
+- Dark mode, gradient stripes, hard or cool-grey shadows, coloured CEFR badges, progress rings, creature mascots, testimonials, all-caps text (labels, buttons, and strips use sentence case; acronyms like CEFR are the only capitals). Pricing lives on `/pricing`, not as a table on the landing page.
 - A second accent. Caveat is for margin notes only, never for UI text.
 - A second seal geometry per language, a face or speech bubble on the seal, or the seal inside the gloss card.
 - A picture of the reader instead of the reader. The demo sheet and proof sheets are real components; the engravings stay in the margins.

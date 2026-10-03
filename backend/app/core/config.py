@@ -80,7 +80,7 @@ class Settings(BaseSettings):
     show_russian: bool = True
     show_italian: bool = True
     show_arabic: bool = True
-    require_auth: bool = False
+    require_auth_enabled: bool | None = Field(default=None, validation_alias="REQUIRE_AUTH")
     generate_monthly_cap: int = 10
     auth_cookie_name: str = "lociros_token"
     data_root: str = Field(default="", validation_alias="DATA_DIR")
@@ -95,6 +95,21 @@ class Settings(BaseSettings):
     generate_workers: int = 2
     generate_max_pending: int = 3
     admin_emails: str = ""
+    paywall_enabled: bool | None = None
+    trial_days: int = 7
+    free_guest_passages: int = 1
+    stripe_secret_key: str = ""
+    stripe_webhook_secret: str = ""
+    stripe_price_monthly: str = ""
+    stripe_price_annual: str = ""
+    stripe_automatic_tax: bool = True
+    supabase_service_role_key: str = ""
+    contact_email: str = "hello@lociros.com"
+    news_scheduler: bool = True
+    max_body_bytes: int = 256 * 1024
+    sentry_dsn: str = ""
+    sentry_traces_sample_rate: float = 0.0
+    allow_legacy_tokens: bool | None = None
 
     @field_validator("database_url", mode="before")
     @classmethod
@@ -106,6 +121,28 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.app_env.lower() in {"production", "prod"}
+
+    @property
+    def paywall(self) -> bool:
+        if self.paywall_enabled is not None:
+            return self.paywall_enabled
+        return self.is_production
+
+    @property
+    def require_auth(self) -> bool:
+        if self.require_auth_enabled is not None:
+            return self.require_auth_enabled
+        return self.is_production
+
+    @property
+    def legacy_tokens(self) -> bool:
+        if self.allow_legacy_tokens is not None:
+            return self.allow_legacy_tokens
+        return not self.is_production
+
+    @property
+    def billing_configured(self) -> bool:
+        return bool(self.stripe_secret_key and self.stripe_price_monthly)
 
     @property
     def is_supabase(self) -> bool:

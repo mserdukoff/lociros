@@ -19,7 +19,7 @@ const HOP = new Set([
   "authorization",
 ]);
 
-/** Backend routes the public app never calls: admin has its own app, legacy auth is Supabase now. */
+/** Backend routes the public app never calls. Operator routes are served only to admin.lociros.com; legacy auth is Supabase now. */
 const BLOCKED = [/^admin(\/|$)/, /^trial(\/|$)/, /^auth\/google/, /^auth\/magic/];
 
 async function proxy(req: NextRequest, path: string[]) {

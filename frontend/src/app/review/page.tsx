@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Art } from "@/components/landing/art";
+import { MobileNav } from "@/components/mobile-nav";
 import { StrokeOrderButton } from "@/components/stroke-order";
 import { fetchReview, submitReview } from "@/lib/api";
 import { loadLanguage } from "@/lib/device";
@@ -138,7 +139,8 @@ export default function ReviewPage() {
         : `${remaining} of ${total} due`;
 
   return (
-    <main className="mx-auto flex min-h-full w-full max-w-[36rem] flex-col px-5 pb-24 pt-8 sm:px-8 sm:pt-10">
+    <main className="mx-auto flex min-h-full w-full max-w-[36rem] flex-col px-5 pb-28 pt-8 sm:px-8 sm:pt-10 lg:pb-24">
+      <MobileNav current="/review" />
       <header className="flex items-center justify-between gap-4">
         <Link href="/library" className="t-quiet">
           ← Library

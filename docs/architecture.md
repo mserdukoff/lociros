@@ -215,7 +215,6 @@ Expected wait: **20–40 seconds**. Reads and shelf loads are not blocked while 
 | `/placement` | `src/app/placement/page.tsx` | Placement read |
 | `/review` | `src/app/review/page.tsx` | SM-2 review of saved words |
 | `/privacy`, `/terms` | `src/app/privacy/page.tsx`, `src/app/terms/page.tsx` | Legal copy |
-| `/admin` | `src/app/admin/page.tsx` | Redirects to `NEXT_PUBLIC_ADMIN_URL` (default `https://admin.lociros.com`) |
 | `/auth/callback` | `src/app/auth/callback/route.ts` | Supabase code exchange; `next` must be a same-origin path |
 | `/api/*` | `src/app/api/[...path]/route.ts` | Proxy to FastAPI |
 | `/health` | `src/app/health/route.ts` | Frontend liveness |
@@ -267,7 +266,6 @@ Data files default to `{repo}/data`. Override with `DATA_DIR`. `WEB_CONCURRENCY`
 | `NEXT_PUBLIC_SUPABASE_URL` | empty | Supabase project URL for Auth |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | empty | Publishable key (never the secret). `NEXT_PUBLIC_SUPABASE_ANON_KEY` also works |
 | `NEXT_PUBLIC_DEMO` | empty | Static catalog + `localStorage`. Set to `1` at build time to skip FastAPI |
-| `NEXT_PUBLIC_ADMIN_URL` | `https://admin.lociros.com` | Where `/admin` and the admin link point |
 | `NEXT_PUBLIC_STICKY_START_TEST` | empty | Enables the phone sticky Start button A/B test |
 
 **Admin** (`admin/.env.example`): `ADMIN_EMAIL` (required; unset locks everyone out), `NLP_BACKEND_URL`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `ADMIN_TIME_ZONE` (default `America/New_York`).
@@ -352,31 +350,26 @@ Grammar and vocab JSON are loaded with `lru_cache`. Restart the backend after ed
 
 ## Known gaps
 
-Found in the September 2026 sweep and not fixed yet. Critical and high findings (legacy auth in production, unmetered generation and translation, the open redirect in `/auth/callback`, the public `lab` flag, stuck jobs, missing rate limits) were fixed then.
+Found in the September 2026 sweep and not fixed yet. Critical and high findings (legacy auth in production, unmetered generation and translation, the open redirect in `/auth/callback`, the public `lab` flag, stuck jobs, missing rate limits) were fixed then. The October 2026 launch pass fixed the legacy HS256 verifier (off in production), trusted forwarded IPs (host and Docker bridges only, behind Caddy), the uncapped `/events` payload, the quota race (one conditional `UPDATE`), missing security headers, robots, and sitemap, partial `DELETE /me`, `.tmp-ref/`, the missing delete button and contact address, and the landing picker ignoring `SHOW_*`.
 
 **Security and abuse**
 
 - **Comprehension answers ship to the client.** `PassageResponse.comprehension` includes `answer_index`, so the quiz can be read from the network tab. It only feeds the learner's own placement, so the harm is self-inflicted.
 - **Guest merge trusts `X-Device-Id`.** On sign-in, whatever device id the browser sends is merged into the account. Anyone who learns another guest's device id can pull that guest's progress into their own account.
-- **Legacy HS256 token path.** `get_identity` still accepts a FastAPI-signed `JWT_SECRET` token (cookie or Bearer) next to Supabase JWTs. It can only be minted by the legacy routes, which are off in production, but the verifier is still live.
-- **`--forwarded-allow-ips='*'`.** Uvicorn trusts `X-Forwarded-For` from any peer. If port 8000 is reachable directly, a caller can pick its own IP and slip the per-IP rate limit. Put the API behind a firewall rule or Caddy that only the Vercel egress reaches, or narrow the trusted list.
 - **Rate limits are in memory, per process.** They reset on restart and are not shared across processes.
-- **`/events` payload is uncapped.** `TrialEventRequest.payload` is any JSON object; only the rate limit bounds it.
-- **Quota check-then-increment race.** `remaining_generates` and `consume_generate` are separate steps with a read-then-write increment, so parallel requests can go one or two over the monthly cap.
-- **No security headers.** The main app sets no CSP, `X-Frame-Options`, or `Referrer-Policy`, and has no `robots.txt` or sitemap.
+- **Per-IP limits see Vercel, not the reader.** Browser traffic reaches FastAPI through the Vercel proxy, so the per-IP window groups readers by Vercel egress. The per-identity window is the real limit.
+- **CSP allows inline scripts.** Next's bootstrap and the service-worker registration are inline, so `script-src` includes `'unsafe-inline'`. Moving to nonces would tighten it.
+- **The guest allowance is per device.** Clearing site data gives a guest another free passage. Generation, translation, and review stay behind an account.
 
 **Data**
 
 - **No per-user unique indexes.** Unique constraints on learner tables are on `device_id` only. Code reads the oldest row for a `user_id`, but duplicates can still be written by a race.
-- **`DELETE /me` is partial.** It removes learner rows, stars, cards, reads, taps, news saves, trial events, quota, and magic links, then `public.users`. It leaves `generation_jobs` and `feedback` rows, and it does not delete the Supabase `auth.users` login, so signing in again creates a fresh empty account.
 - **No automatic migrations.** Startup runs `create_all` plus a fixed column patch, never `alembic upgrade`, because the migrations are not idempotent against databases that `create_all` already built. Apply new migrations by hand.
-- **`.tmp-ref/` is tracked in git.** Scratch reference files that should be removed or ignored.
 
 **Product**
 
-- **No delete-account button.** `DELETE /api/me` exists, but no screen calls it.
-- **No contact address.** The privacy and terms pages have no email for data requests.
 - **Service worker caches navigations.** Offline fallback serves the last cached copy of a page, which can show stale shelf state after coming back online until the next network response.
-- **Landing language picker ignores `SHOW_*`.** A language hidden on the shelf is still offered on `/`.
+- **Thin catalogs outside Japanese.** At launch Russian, Italian, and Arabic have 8 to 16 public passages each against 180 for Japanese, with little or no B2. Grow them with `scripts/batch_catalog.py --levels A1,A2,B1,B2` or hide them with `SHOW_*=false` before taking money for them.
+- **Billing state is mirrored, not queried.** Entitlement reads the `users` columns the webhook keeps up to date. A missed webhook leaves a stale status until the next event; Stripe retries failed deliveries for three days.
 - **Effects that set state synchronously.** Eight effects in `generate-form`, `placement`, `reader`, `seal`, `shelf`, and `stroke-order` trip `react-hooks/set-state-in-effect`. The rule is downgraded to a warning in `frontend/eslint.config.mjs` so CI lint passes; fix them and restore it to an error.
 - **Audio is offline-only.** Only catalog texts that `scripts/batch_catalog.py` voiced have audio; generated passages never do.

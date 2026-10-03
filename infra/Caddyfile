@@ -1,0 +1,31 @@
+# Lociros API on Lightsail. Caddy gets and renews the TLS certificate.
+# Install: sudo sh infra/caddy-setup.sh api.lociros.com
+# The container listens on 127.0.0.1:8000 only; the firewall opens 22, 80, 443.
+
+{$API_DOMAIN:api.lociros.com} {
+	encode zstd gzip
+
+	request_body {
+		max_size 1MB
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	reverse_proxy 127.0.0.1:8000 {
+		transport http {
+			read_timeout 120s
+		}
+	}
+
+	log {
+		output file /var/log/caddy/lociros-api.log {
+			roll_size 20MiB
+			roll_keep 5
+		}
+	}
+}

@@ -91,7 +91,31 @@ class UserRow(Base):
     google_sub: Mapped[str | None] = mapped_column(String(128), unique=True, nullable=True)
     display_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     auth_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), unique=True, nullable=True)
+    trial_ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    stripe_customer_id: Mapped[str | None] = mapped_column(
+        String(64), unique=True, nullable=True, index=True
+    )
+    stripe_subscription_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    subscription_status: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    subscription_plan: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    current_period_end: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    cancel_at_period_end: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+
+class StripeEventRow(Base):
+    """Webhook events already applied, so Stripe retries are no-ops."""
+
+    __tablename__ = "stripe_events"
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(80))
+    received_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
     )
@@ -283,6 +307,20 @@ class GenerateQuotaRow(Base):
     count: Mapped[int] = mapped_column(Integer, default=0)
 
 
+class LlmUsageRow(Base):
+    """OpenRouter tokens spent per account per month, for spotting heavy users."""
+
+    __tablename__ = "llm_usage"
+    __table_args__ = (UniqueConstraint("account_key", "year_month"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    account_key: Mapped[str] = mapped_column(String(80), index=True)
+    year_month: Mapped[str] = mapped_column(String(7))
+    calls: Mapped[int] = mapped_column(Integer, default=0)
+    prompt_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    completion_tokens: Mapped[int] = mapped_column(Integer, default=0)
+
+
 class GenerationJobRow(Base):
     __tablename__ = "generation_jobs"
 
@@ -360,7 +398,16 @@ _SQLITE_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("device_id", "VARCHAR(64)"),
         ("user_id", "INTEGER"),
     ],
-    "users": [("auth_id", "CHAR(36)")],
+    "users": [
+        ("auth_id", "CHAR(36)"),
+        ("trial_ends_at", "TIMESTAMP WITH TIME ZONE"),
+        ("stripe_customer_id", "VARCHAR(64)"),
+        ("stripe_subscription_id", "VARCHAR(64)"),
+        ("subscription_status", "VARCHAR(24)"),
+        ("subscription_plan", "VARCHAR(16)"),
+        ("current_period_end", "TIMESTAMP WITH TIME ZONE"),
+        ("cancel_at_period_end", "BOOLEAN DEFAULT FALSE"),
+    ],
 }
 
 
@@ -420,6 +467,8 @@ APP_TABLES = (
     "generate_quota",
     "generation_jobs",
     "news_issues",
+    "stripe_events",
+    "llm_usage",
 )
 
 

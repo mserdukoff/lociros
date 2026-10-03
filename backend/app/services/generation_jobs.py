@@ -207,15 +207,25 @@ def _process_job(job_id: str) -> None:
             job.finished_at = datetime.now(timezone.utc)
             db.commit()
             return
-        passage = generate_passage(
-            db,
-            job.level,
-            job.topic,
-            job.genre,
-            job.language,
-            known_lemmas=known,
-            reuse_lemmas=reuse,
+        from app.services.llm_usage import charged_to
+
+        account = (
+            f"user:{job.user_id}"
+            if job.user_id
+            else f"device:{job.device_id}"
+            if job.device_id
+            else None
         )
+        with charged_to(account):
+            passage = generate_passage(
+                db,
+                job.level,
+                job.topic,
+                job.genre,
+                job.language,
+                known_lemmas=known,
+                reuse_lemmas=reuse,
+            )
         job.status = STATUS_COMPLETED
         job.passage_id = passage.id
         job.finished_at = datetime.now(timezone.utc)

@@ -7,6 +7,9 @@ IMAGE="${IMAGE:-lociros-backend:latest}"
 NAME="${NAME:-lociros-api}"
 ENV_FILE="${ENV_FILE:-/opt/lociros/.env}"
 AUDIO_HOST_DIR="${AUDIO_HOST_DIR:-/opt/lociros/audio}"
+# Caddy on the host terminates HTTPS (infra/caddy-setup.sh). Set PUBLISH=8000:8000
+# only while there is no domain yet and the firewall must expose :8000 directly.
+PUBLISH="${PUBLISH:-127.0.0.1:8000:8000}"
 
 if [ ! -f "$ENV_FILE" ]; then
   echo "Missing $ENV_FILE" >&2
@@ -28,7 +31,7 @@ docker run -d \
   -e DATA_DIR=/app/data \
   -e AUDIO_DIR=/app/backend/audio \
   -v "$AUDIO_HOST_DIR:/app/backend/audio" \
-  -p 8000:8000 \
+  -p "$PUBLISH" \
   "$IMAGE"
 
 echo "Waiting for /health (first boot seeds the library and can take several minutes)..."
@@ -36,7 +39,7 @@ for i in $(seq 1 60); do
   if curl -fsS "http://127.0.0.1:8000/health" >/dev/null 2>&1; then
     curl -fsS "http://127.0.0.1:8000/api/health/ready" || true
     echo
-    echo "API is up on :8000"
+    echo "API is up on $PUBLISH"
     exit 0
   fi
   sleep 10
