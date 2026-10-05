@@ -40,7 +40,21 @@
   --naskh: var(--font-naskh), "Noto Naskh Arabic", "Arabic Typesetting",
     "Traditional Arabic", serif;
   --hand: var(--font-caveat), "Bradley Hand", "Segoe Print", cursive;
+  --r-card: 8px;
+  --r-sheet: 14px;
 }
+
+/* Registered so the landing page can morph between language themes. */
+@property --paper { syntax: "<color>"; inherits: true; initial-value: #f4efe6; }
+@property --paper-raised { syntax: "<color>"; inherits: true; initial-value: #fbf9f4; }
+@property --paper-deep { syntax: "<color>"; inherits: true; initial-value: #ebe5d8; }
+@property --blush { syntax: "<color>"; inherits: true; initial-value: #f2e5da; }
+@property --blush-deep { syntax: "<color>"; inherits: true; initial-value: #e6c8b6; }
+@property --sage-wash { syntax: "<color>"; inherits: true; initial-value: #ebe9dc; }
+@property --sage { syntax: "<color>"; inherits: true; initial-value: #4f6e57; }
+@property --ink { syntax: "<color>"; inherits: true; initial-value: #1c2538; }
+@property --rule { syntax: "<color>"; inherits: true; initial-value: #dcd5c7; }
+@property --terracotta { syntax: "<color>"; inherits: true; initial-value: #b5452a; }
 
 @theme inline {
   --color-paper: var(--paper);
@@ -68,8 +82,8 @@
   --font-ar: var(--naskh);
   --font-hand: var(--hand);
   /* controls sit at 8px, sheets of paper at 14px. */
-  --radius-card: 8px;
-  --radius-sheet: 14px;
+  --radius-card: var(--r-card);
+  --radius-sheet: var(--r-sheet);
   --shadow-card: var(--elev-card);
   --shadow-float: var(--elev-float);
 }
@@ -166,14 +180,14 @@ body {
 
 /* a sheet of paper lifted off the page */
 @utility sheet {
-  border-radius: var(--radius-sheet);
+  border-radius: var(--r-sheet);
   border: 1px solid color-mix(in srgb, var(--ink) 7%, transparent);
   background: var(--paper-raised);
   box-shadow: var(--elev-card);
 }
 
 @utility sheet-float {
-  border-radius: 12px;
+  border-radius: calc(var(--r-sheet) * 0.85);
   border: 1px solid color-mix(in srgb, var(--ink) 8%, transparent);
   background: var(--paper-raised);
   box-shadow: var(--elev-float);
@@ -244,8 +258,8 @@ body {
   align-items: center;
   justify-content: center;
   padding-inline: 1.5rem;
-  border-radius: var(--radius-card);
-  background: var(--ink);
+  border-radius: var(--r-card);
+  background: var(--btn, var(--ink));
   color: var(--paper);
   font-size: 15px;
   font-weight: 500;
@@ -253,7 +267,7 @@ body {
   white-space: nowrap;
   transition: background-color 150ms ease, opacity 150ms ease;
   &:hover {
-    background: color-mix(in srgb, var(--ink) 88%, var(--paper));
+    background: color-mix(in srgb, var(--btn, var(--ink)) 88%, var(--paper));
   }
   &:disabled {
     cursor: wait;
@@ -381,6 +395,83 @@ article rt {
   .seal-animate {
     animation: none;
   }
+}
+
+/* ---------- landing language themes ---------- */
+
+.lang-theme {
+  background: var(--paper);
+  color: var(--ink);
+  transition-property:
+    --paper, --paper-raised, --paper-deep, --blush, --blush-deep, --sage-wash, --sage, --ink,
+    --rule, --terracotta;
+  transition-duration: 700ms;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* The engravings sit on white: multiply lets the tinted paper show through it. */
+.lang-theme img.art {
+  mix-blend-mode: multiply;
+}
+
+/* The hero's "actually A2." */
+[data-theme="ru"] .claim {
+  display: inline-block;
+  margin-top: 0.1em;
+  padding: 0.02em 0.12em 0.1em;
+  line-height: 1;
+  background: var(--terracotta);
+  color: var(--paper);
+}
+[data-theme="ru"] .claim-mark {
+  display: none;
+}
+[data-theme="it"] .claim {
+  color: var(--terracotta);
+}
+[data-theme="ar"] .claim {
+  color: var(--terracotta);
+}
+
+/* The verb "read", stamped beside the eyebrow. */
+.read-stamp {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  color: var(--terracotta);
+}
+[data-theme="ja"] .read-stamp {
+  writing-mode: vertical-rl;
+  padding: 0.35em 0.22em;
+  border-radius: 3px;
+  background: var(--terracotta);
+  color: var(--paper);
+  font-family: var(--gothic);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  transform: rotate(-3deg);
+}
+[data-theme="ar"] .read-stamp {
+  padding: 0.2em 0.65em 0.35em;
+  border: 1px solid color-mix(in srgb, var(--terracotta) 60%, transparent);
+  border-radius: 999px 999px 4px 4px;
+  font-family: var(--naskh);
+  font-size: 15px;
+}
+[data-theme="it"] .read-stamp {
+  font-family: var(--serif);
+  font-size: 15px;
+}
+[data-theme="ru"] .read-stamp {
+  padding: 0.3em 0.55em;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  transform: rotate(-4deg);
 }
 
 /* ---------- global states ---------- */

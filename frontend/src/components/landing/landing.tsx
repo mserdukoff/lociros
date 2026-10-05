@@ -9,7 +9,6 @@ import { OnboardingDialog } from "@/components/onboarding-dialog";
 import { SignInDialog, type AuthMode } from "@/components/sign-in-dialog";
 import { DemoBanner } from "@/components/demo-banner";
 import { LogoMark } from "@/components/logo";
-import { Segmented } from "@/components/segmented";
 import { fetchLibrary, fetchMe, fetchShelfCounts, track } from "@/lib/api";
 import { isDemo } from "@/lib/demo";
 import {
@@ -31,12 +30,15 @@ import {
 import { Art, HandArrow, HandNote, LineIcon } from "./art";
 import { DEMO } from "./demo-data";
 import { Drift } from "./drift";
+import { LanguageBar } from "./language-bar";
+import { Motif, PageMotif } from "./motif";
 import { DrawnArrow, InkArt, Reveal, Stagger, StaggerItem } from "./motion-bits";
 import { PromptHero } from "./prompt-hero";
 import { ReaderDemo } from "./reader-demo";
 import { SCENES } from "./scenes";
 import { STICKY_TEST, StickyStart, stickyArm } from "./sticky-start";
 import { Story, type StoryStep } from "./story";
+import { THEMES, themeStyle } from "./themes";
 
 const ShaderWash = dynamic(() => import("./shader-wash"), { ssr: false });
 
@@ -53,13 +55,6 @@ const KEPT_OUT: Record<LangCode, string> = {
   ru: "At A2, nominative, accusative, genitive, prepositional, and dative are allowed, in present, past, and future. Instrumental, participles, verbal adverbs, который, and бы are kept out.",
   it: "At A2, the present, passato prossimo, and the simple future are allowed. Imperfetto, the conditional, the subjunctive, the gerund, the remote past, relative che, and benché are kept out.",
   ar: "At A2, present, past, and future are allowed, with Form I verbs and common Form II and Form IV verbs. The dual, إنّ, the relative الذي, كان + verb, the passive, and Forms III and V to X are kept out.",
-};
-
-const ANALYZER: Record<LangCode, string> = {
-  ja: "Sudachi",
-  ru: "pymorphy3",
-  it: "spaCy",
-  ar: "CAMeL Tools",
 };
 
 type Row = { k: string; v: string; icon: string };
@@ -144,7 +139,7 @@ function InkUnderline() {
       aria-hidden="true"
       viewBox="0 0 300 14"
       preserveAspectRatio="none"
-      className="art absolute -bottom-2 left-0 h-[0.32em] w-full text-terracotta/85"
+      className="art claim-mark absolute -bottom-2 left-0 h-[0.32em] w-full text-terracotta/85"
       fill="none"
       stroke="currentColor"
       strokeLinecap="round"
@@ -240,7 +235,7 @@ function Strip({ no, title, meta }: { no: string; title: string; meta?: React.Re
 /** The margin column under a strip's number, with a line set sideways. */
 function Rail({ children }: { children: React.ReactNode }) {
   return (
-    <div aria-hidden="true" className={`hidden border-r ${LINE} lg:flex lg:flex-col lg:items-center lg:justify-end lg:py-8`}>
+    <div aria-hidden="true" className={`relative hidden border-r ${LINE} lg:flex lg:flex-col lg:items-center lg:justify-end lg:py-8`}>
       <span className="rotate-180 text-[12px] tracking-[0.02em] whitespace-nowrap text-ink/40 [writing-mode:vertical-rl]">
         {children}
       </span>
@@ -478,8 +473,8 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
       body: (
         <>
           <p>
-            A morphological analyzer reads every word and checks it against the level. If something
-            is above the level, the passage is rewritten.
+            Every word is checked against the level. If something is above the level, the passage
+            is rewritten.
           </p>
           <p className="mt-4 text-[13px] leading-relaxed text-ink/50">{KEPT_OUT[lang]}</p>
         </>
@@ -521,7 +516,7 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
       body: (
         <p>
           Levels run from A1 through B2. One short read sets where you start. The shelf remembers
-          the lemmas you have seen, and the next passage is chosen from that.
+          the words you have seen, and the next passage is chosen from that.
         </p>
       ),
       visual: <RateDemo key={lang} lang={lang} />,
@@ -600,12 +595,17 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
 
   return (
     <MotionConfig reducedMotion="user">
-    <main className="relative overflow-x-clip">
+    <main
+      data-theme={lang}
+      style={themeStyle(lang)}
+      className="lang-theme relative min-h-screen overflow-x-clip"
+    >
       {variant === "shader" && wash ? (
         <div aria-hidden="true" className="pointer-events-none fixed inset-0">
           <ShaderWash lang={lang} className="h-full w-full" />
         </div>
       ) : null}
+      <PageMotif lang={lang} />
       <div className="relative">
       {/* ---------- hero ---------- */}
       <Wrap>
@@ -653,6 +653,12 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
           </nav>
         </header>
 
+        {offered.length > 1 ? (
+          <div className="pb-4">
+            <LanguageBar value={lang} options={offered} onChange={chooseLang} />
+          </div>
+        ) : null}
+
         {!demo ? (
           <SignInDialog
             open={authMode !== null}
@@ -684,8 +690,9 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
 
       {/* Above the sections after it, so the hero's word gloss can hang over them. */}
       <Folio className="z-20">
+        <Motif lang={lang} />
         <Rail>Graded readers · A1 to B2</Rail>
-        <div className="min-w-0">
+        <div className="relative z-[1] min-w-0">
         {variant === "prompt" ? (
           <div className="px-5 sm:px-10">
             <PromptHero lang={lang} onLang={chooseLang} languages={offered} />
@@ -695,6 +702,14 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
             <Col className="relative z-10 lg:col-span-5 lg:pt-6">
               <Item>
                 <p className="t-eyebrow flex items-center gap-3">
+                  <span
+                    lang={lang}
+                    dir={lang === "ar" ? "rtl" : undefined}
+                    title={`“${THEMES[lang].read}” means “read”`}
+                    className="read-stamp"
+                  >
+                    {THEMES[lang].read}
+                  </span>
                   <span aria-hidden="true" className="h-px w-8 bg-terracotta/70" />
                   Every word has depth.
                 </p>
@@ -702,7 +717,7 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
               <Item>
                 <h1 className="t-display mt-5 text-[2.6rem] text-ink sm:text-[3.25rem] lg:text-[3.6rem]">
                   Graded readers where A2 is{" "}
-                  <span className="relative whitespace-nowrap">
+                  <span className="claim relative whitespace-nowrap">
                     actually A2.
                     <InkUnderline />
                   </span>
@@ -710,24 +725,12 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
               </Item>
               <Item>
                 <p className="mt-6 max-w-[27rem] text-[1.0625rem] leading-[1.65] text-ink/70">
-                  Short passages from A1 to B2. A morphological analyzer checks every word against
-                  the level before you see it. Tap any word for its meaning and grammar.
+                  Short passages from A1 to B2. Every word is checked against the level before you
+                  see it. Tap any word for its meaning and grammar.
                 </p>
               </Item>
               <Item>
-                <div className="mt-7 flex min-h-[2.25rem] items-center">
-                  <Segmented
-                    animated={anim}
-                    ariaLabel="Language"
-                    size="sm"
-                    options={offered.map((l) => ({ id: l.id, label: l.label }))}
-                    value={lang}
-                    onChange={chooseLang}
-                  />
-                </div>
-              </Item>
-              <Item>
-                <div className="mt-7 flex min-h-12 flex-wrap items-center gap-x-7 gap-y-4">
+                <div className="mt-8 flex min-h-12 flex-wrap items-center gap-x-7 gap-y-4">
                   {returning ? (
                     <Link
                       href={`/passage/${returning.item.id}`}
@@ -784,7 +787,7 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
           className={`grid border-t ${LINE} divide-y divide-ink/15 text-[13.5px] text-ink/65 sm:grid-cols-3 sm:divide-x sm:divide-y-0`}
         >
           {[
-            { icon: "list", text: `Every word checked by ${ANALYZER[lang]}` },
+            { icon: "list", text: "Every passage checked against its level" },
             { icon: "book", text: "Four levels, A1 to B2, one short read to place you" },
             { icon: "bookmark", text: "No account to start. Keep your shelf later." },
           ].map((fact, i) => (
@@ -803,7 +806,7 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
       ) : (
         /* ---------- the check ---------- */
         <Folio id="check">
-          <Strip no="01" title="The check" meta={`${ANALYZER[lang]} · ${level}`} />
+          <Strip no="01" title="The check" meta={`${language} · ${level}`} />
           <Rail>Checked before you see it</Rail>
           <Section>
           <div className="grid lg:grid-cols-12">
@@ -812,8 +815,8 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
                 {article} {language} passage that failed the check.
               </h2>
               <p className="mt-5 text-[1rem] leading-[1.65] text-ink/70">
-                A morphological analyzer reads every word and checks it against the level. If
-                something is above the level, the passage is rewritten. In the reader, Why this is{" "}
+                Every word is checked against the level. If something is above the level, the
+                passage is rewritten. In the reader, Why this is{" "}
                 {level} shows what was kept out.
               </p>
               <p className="mt-5 text-[13px] leading-relaxed text-ink/50">{KEPT_OUT[lang]}</p>
@@ -823,7 +826,7 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
                     {count.toLocaleString()}
                   </p>
                   <p className="mt-2 text-[13px] leading-relaxed text-ink/55">
-                    {language} passages on the shelf, each checked by {ANALYZER[lang]}.
+                    {language} passages on the shelf, each checked against its level.
                   </p>
                 </div>
               ) : null}
@@ -852,7 +855,7 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
               level one step.
             </p>
             <p className="mt-4 text-[1rem] leading-[1.65] text-ink/70">
-              The shelf remembers the lemmas you have seen, and the next passage is chosen from that.
+              The shelf remembers the words you have seen, and the next passage is chosen from that.
               Once a day, one news passage from a real wire story is added at your level, checked
               like the rest.
             </p>
