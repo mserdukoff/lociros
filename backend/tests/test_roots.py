@@ -123,3 +123,20 @@ def test_morph_from_analysis_stores_enclitic():
     morph = morph_from_analysis(analysis, "كتابي")
     assert morph.enclitic == "1s_poss"
     assert morph.state == "const"
+
+
+def test_hollow_verbs_are_form_i_not_iii():
+    # CAMeL patterns: hollow verbs drop the middle radical, Form III keeps it.
+    for hollow in ("1ا3َ", "1ا3َت", "1اءَ"):
+        assert pattern_to_form(hollow) == "I", hollow
+    assert pattern_to_form("أ1ا3َ") == "IV"
+    for form_iii in ("1ا2َ3َ", "وا2َ3َ", "يُ1ا2ِ3"):
+        assert pattern_to_form(form_iii) == "III", form_iii
+
+
+def test_geminate_verbs_are_not_form_ii():
+    for form_i in ("1َ2َّ", "يَ1ُ2ّ", "1َ2ِّ"):
+        assert pattern_to_form(form_i) == "I", form_i
+    for form_iv in ("أَ1َ2َّ", "أُ1ِ2ّ", "يُ1ِ2ّ", "تُ1ِ2ّ"):
+        assert pattern_to_form(form_iv) == "IV", form_iv
+    assert pattern_to_form("1َ2ّ3َ") == "II"

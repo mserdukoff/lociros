@@ -24,6 +24,7 @@ from app.models.schemas import (
     PassageResponse,
     Token,
 )
+from app.services import shared_store
 from app.services.gloss import attach_glosses, resolve_gloss
 from app.services.identity import Identity
 from app.services.llm import generate_passage_text, translate_passage
@@ -300,6 +301,8 @@ def generate_passage(
         cached = find_cached_passage(db, level, topic, genre, language)
         if cached is not None:
             return cached
+    # Return the pooled connection while waiting on the LLM; it re-checks out at persist.
+    db.commit()
 
     title, text, translation = generate_passage_text(
         level,
@@ -329,6 +332,7 @@ def generate_passage(
                 known_lemmas=known_lemmas,
                 reuse_lemmas=reuse_lemmas,
                 news_brief=news_brief,
+                previous_text=text,
             )
             tokens2, result2 = _analyze_and_validate(
                 text2, level, language, use_llm_gloss=True
@@ -388,7 +392,15 @@ _translation_lock = threading.Lock()
 
 
 def _may_translate(passage_id: str) -> bool:
-    """One LLM translation attempt per passage per hour, per process."""
+    """One LLM translation attempt per passage per hour, across replicas when Redis is set."""
+    redis = shared_store.client()
+    if redis is not None:
+        try:
+            return bool(
+                redis.set(f"translate:{passage_id}", 1, nx=True, ex=TRANSLATION_RETRY_SECONDS)
+            )
+        except Exception as exc:  # noqa: BLE001 - any Redis failure falls back
+            shared_store.mark_down(exc)
     now = time.monotonic()
     with _translation_lock:
         last = _translation_attempts.get(passage_id)

@@ -5,6 +5,7 @@ from functools import lru_cache
 
 import razdel
 
+from app.core.once import load_once
 from app.models.schemas import MorphInfo, Token
 from app.services.data import vocab_bands
 
@@ -30,7 +31,7 @@ MOOD_MAP = {"indc": "indc", "impr": "impr"}
 _NAME_GRAMMEMES = {"Name", "Surn", "Patr", "Geox", "Orgn", "Trad"}
 
 
-@lru_cache(maxsize=1)
+@load_once
 def morph_analyzer():
     import pymorphy3
 
@@ -84,6 +85,12 @@ def analyze_text_ru(text: str, language: str = "ru") -> list[Token]:
 
 
 def analyze_word(word: str, language: str = "ru") -> MorphInfo:
+    # Copy so callers can edit the result without touching the cached analysis.
+    return _analyze_word_cached(word, language).model_copy(deep=True)
+
+
+@lru_cache(maxsize=50_000)
+def _analyze_word_cached(word: str, language: str) -> MorphInfo:
     if language == "ja":
         from app.services.morph_ja import analyze_word_ja
 

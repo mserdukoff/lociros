@@ -11,7 +11,7 @@
 | Italian NLP | [spaCy](https://spacy.io/) `it_core_news_md` |
 | Arabic NLP | [CAMeL Tools](https://github.com/CAMeL-Lab/camel_tools) MSA morphology + MLE disambiguator |
 | Japanese NLP | [Sudachi](https://github.com/WorksApplications/Sudachi) split mode C (`sudachipy` + `sudachidict_core`) |
-| LLM | OpenRouter (`openai/gpt-4o-mini` by default) via the OpenAI Python SDK |
+| LLM | OpenRouter (`google/gemini-3.1-flash-lite` by default, `openai/gpt-4o-mini` fallback) via the OpenAI Python SDK |
 | Runtime | Python 3.12+, Node 20+ (frontend Docker image uses Node 22) |
 | Packaging | `docker-compose.yml`: frontend `:3000`, backend `:8000`, Postgres, volume `levla-audio` |
 | Auth | Supabase Auth (email and password) in the browser; FastAPI verifies the access token |
@@ -129,8 +129,14 @@ levla/
 │   ├── build_ar_lexicon.py         # Arabic vocab + gloss + roots
 │   ├── build_kanji.py              # KANJIDIC2 + KRADFILE + JLPT → ja.json
 │   ├── batch_catalog.py            # offline catalog generation + audio
-│   ├── lightsail-run.sh            # run the API container on Lightsail
+│   ├── lightsail-run.sh            # Redis + API replicas on Lightsail, rolling restart
+│   ├── deploy-api.sh               # build, ship, migrate, lightsail-run.sh
+│   ├── loadtest.py                 # simulated readers: throughput and latency
 │   └── lightsail-set-db-password.sh
+├── infra/
+│   ├── nginx/lociros.conf          # TLS, flood guard, load balancing
+│   ├── nginx-setup.sh              # nginx + certbot + swap on the box
+│   └── loadtest/compose.yml        # production topology locally
 ├── .github/workflows/ci.yml        # pytest, frontend lint, admin lint+build, Docker builds
 ├── docs/
 └── docker-compose.yml
@@ -234,7 +240,10 @@ Client-only modules (`shelf.tsx`, `reader.tsx`, `generate-form.tsx`) use `"use c
 | Variable | Default | Meaning |
 | -------- | ------- | ------- |
 | `OPENROUTER_API_KEY` | empty | Required for `/generate`, LLM gloss fill, and translation |
-| `LLM_MODEL` | `openai/gpt-4o-mini` | OpenRouter model id |
+| `LLM_MODEL` | `google/gemini-3.1-flash-lite` | OpenRouter model id |
+| `LLM_FALLBACK_MODELS` | `openai/gpt-4o-mini` | Comma-separated models OpenRouter tries when the main one errors |
+| `LLM_PROVIDER_SORT` | `throughput` | OpenRouter provider order (`throughput`, `latency`, `price`, or empty) |
+| `LLM_REASONING_EFFORT` | empty | Reasoning effort for thinking models only |
 | `DATABASE_URL` | SQLite at `backend/levla.db` | SQLAlchemy URL. `postgres://` is rewritten to `postgresql+psycopg2://`. Supabase hosts get `sslmode=require` if unset |
 | `DB_SSLMODE` | empty | Set `require` for hosted Postgres; inferred for Supabase URLs |
 | `CORS_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000` | Comma-separated. `PUBLIC_BASE_URL` is always included |
@@ -246,7 +255,7 @@ Client-only modules (`shelf.tsx`, `reader.tsx`, `generate-form.tsx`) use `"use c
 | `ADMIN_EMAILS` | empty | Comma-separated emails allowed on admin routes. Empty means nobody |
 | `REQUIRE_AUTH` | `false` | Generation needs a signed-in account |
 | `GENERATE_MONTHLY_CAP` | `10` | Custom passages per identity per month (always enforced) |
-| `GENERATE_WORKERS` | `2` | Generation threads per API process (`0` to leave it to the worker service) |
+| `GENERATE_WORKERS` | `4` | Generation threads per API process (`0` to leave it to the worker service) |
 | `GENERATE_MAX_PENDING` | `3` | Unfinished jobs per identity |
 | `SHOW_RUSSIAN` / `SHOW_ITALIAN` / `SHOW_ARABIC` | `true` | Set `false` to hide a language |
 | `AZURE_SPEECH_KEY` / `AZURE_SPEECH_REGION` / `AZURE_SPEECH_VOICE` | empty / empty / `ja-JP-NanamiNeural` | Audio for `scripts/batch_catalog.py` |
@@ -342,22 +351,22 @@ Grammar and vocab JSON are loaded with `lru_cache`. Restart the backend after ed
 ## Limitations that follow from the architecture
 
 - **SQLite** is fine for local development. Compose uses local Postgres. Production uses Supabase.
-- **Generation is async.** `POST /generate` enqueues a job; worker threads process it. Each API process starts `GENERATE_WORKERS` threads, so the total is `WEB_CONCURRENCY × GENERATE_WORKERS` plus any worker container. Production runs one process with two threads.
-- **Rate limits are per process.** They live in memory and reset on restart.
+- **Generation is async.** `POST /generate` enqueues a job; worker threads process it. Each API process starts `GENERATE_WORKERS` threads, and jobs are claimed with `FOR UPDATE SKIP LOCKED`, so any number of processes can share the queue. Production runs two single-process replicas behind nginx, each with four generation threads; replica 1 also runs the news scheduler. A worker holds no database connection while it waits on the LLM, every LLM call has a hard deadline, and a stopping process puts its unfinished jobs back in the queue.
+- **Rate limits are shared through Redis** when `REDIS_URL` is set (production), so every replica enforces one window. If Redis is unreachable, each process falls back to its own in-memory window for a few seconds at a time rather than failing requests.
+- **Per-process caches.** Analyzers, the gloss lexicon, per-word analyses, each passage's lemma index, and the shelf counts are cached in each replica's memory. Passages' tokens are never rewritten after creation, which is what makes the lemma index safe to keep. Analyzer loaders run once per process even when many requests arrive cold (`app/core/once.py`), and production loads them before the replica reports healthy (`PRELOAD_ANALYZERS`). A replica with all four languages loaded holds about 1.5 GB, which is what limits the 4 GB box to two replicas.
 - **Accounts are optional.** Guest progress is a device UUID. After Supabase sign-in, FastAPI merges that device into `public.users`, keeping the account's row wherever both have one.
 - **Quarantine.** A generated passage that still violates the ruleset after its rewrite is stored but hidden. Calibration is a gate with a retry.
 - **Analyzer errors** become CEFR errors: the wrong lemma or POS will flag or miss constructions.
 
 ## Known gaps
 
-Found in the September 2026 sweep and not fixed yet. Critical and high findings (legacy auth in production, unmetered generation and translation, the open redirect in `/auth/callback`, the public `lab` flag, stuck jobs, missing rate limits) were fixed then. The October 2026 launch pass fixed the legacy HS256 verifier (off in production), trusted forwarded IPs (host and Docker bridges only, behind Caddy), the uncapped `/events` payload, the quota race (one conditional `UPDATE`), missing security headers, robots, and sitemap, partial `DELETE /me`, `.tmp-ref/`, the missing delete button and contact address, and the landing picker ignoring `SHOW_*`.
+Found in the September 2026 sweep and not fixed yet. Critical and high findings (legacy auth in production, unmetered generation and translation, the open redirect in `/auth/callback`, the public `lab` flag, stuck jobs, missing rate limits) were fixed then. The October 2026 launch pass fixed the legacy HS256 verifier (off in production), trusted forwarded IPs (host and Docker bridges only, behind nginx), the uncapped `/events` payload, the quota race (one conditional `UPDATE`), missing security headers, robots, and sitemap, partial `DELETE /me`, `.tmp-ref/`, the missing delete button and contact address, and the landing picker ignoring `SHOW_*`.
 
 **Security and abuse**
 
 - **Comprehension answers ship to the client.** `PassageResponse.comprehension` includes `answer_index`, so the quiz can be read from the network tab. It only feeds the learner's own placement, so the harm is self-inflicted.
 - **Guest merge trusts `X-Device-Id`.** On sign-in, whatever device id the browser sends is merged into the account. Anyone who learns another guest's device id can pull that guest's progress into their own account.
-- **Rate limits are in memory, per process.** They reset on restart and are not shared across processes.
-- **Per-IP limits see Vercel, not the reader.** Browser traffic reaches FastAPI through the Vercel proxy, so the per-IP window groups readers by Vercel egress. The per-identity window is the real limit.
+- **The visitor address depends on `PROXY_SECRET`.** Browser traffic reaches FastAPI through the Vercel proxy, which forwards the visitor's address with the shared secret; the API and nginx only believe it when the secret matches. If the secret is missing on either side, per-IP windows group all guests by Vercel's egress addresses.
 - **CSP allows inline scripts.** Next's bootstrap and the service-worker registration are inline, so `script-src` includes `'unsafe-inline'`. Moving to nonces would tighten it.
 - **The guest allowance is per device.** Clearing site data gives a guest another free passage. Generation, translation, and review stay behind an account.
 

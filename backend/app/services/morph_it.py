@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import re
-from functools import lru_cache
 
+from app.core.once import load_once
 from app.models.schemas import MorphInfo, Token
 from app.services.data import vocab_bands
 
@@ -15,7 +15,7 @@ GENDER_MAP = {"Masc": "masc", "Fem": "fem", "Neut": "neut"}
 FORM_MAP = {"Fin": "fin", "Inf": "inf", "Part": "part", "Ger": "ger"}
 
 
-@lru_cache(maxsize=1)
+@load_once
 def italian_nlp():
     import spacy
 

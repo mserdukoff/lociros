@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import logging
 import re
-from functools import lru_cache
 
+from app.core.once import load_once
 from app.models.schemas import ConjPiece, MorphInfo, Token
 from app.services.data import vocab_bands
 from app.services.roots import (
@@ -360,7 +360,7 @@ def tokenize_ar(text: str) -> list[tuple[str, str, bool]]:
     return out
 
 
-@lru_cache(maxsize=1)
+@load_once
 def _camel():
     try:
         from camel_tools.disambig.mle import MLEDisambiguator

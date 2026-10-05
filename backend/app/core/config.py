@@ -64,7 +64,10 @@ class Settings(BaseSettings):
     app_env: str = "development"
     log_level: str = "info"
     openrouter_api_key: str = ""
-    llm_model: str = "openai/gpt-4o-mini"
+    llm_model: str = "google/gemini-3.1-flash-lite"
+    llm_fallback_models: str = "openai/gpt-4o-mini"
+    llm_provider_sort: str = "throughput"
+    llm_reasoning_effort: str = ""
     database_url: str = f"sqlite:///{BACKEND_DIR / 'levla.db'}"
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     cors_origin_regex: str = ""
@@ -92,7 +95,7 @@ class Settings(BaseSettings):
     db_pool_recycle: int = 600
     db_sslmode: str = ""
     skip_seed: bool = False
-    generate_workers: int = 2
+    generate_workers: int = 4
     generate_max_pending: int = 3
     admin_emails: str = ""
     paywall_enabled: bool | None = None
@@ -110,6 +113,9 @@ class Settings(BaseSettings):
     sentry_dsn: str = ""
     sentry_traces_sample_rate: float = 0.0
     allow_legacy_tokens: bool | None = None
+    preload_analyzers_enabled: bool | None = Field(default=None, validation_alias="PRELOAD_ANALYZERS")
+    redis_url: str = ""
+    proxy_secret: str = ""
 
     @field_validator("database_url", mode="before")
     @classmethod
@@ -126,6 +132,12 @@ class Settings(BaseSettings):
     def paywall(self) -> bool:
         if self.paywall_enabled is not None:
             return self.paywall_enabled
+        return self.is_production
+
+    @property
+    def preload_analyzers(self) -> bool:
+        if self.preload_analyzers_enabled is not None:
+            return self.preload_analyzers_enabled
         return self.is_production
 
     @property

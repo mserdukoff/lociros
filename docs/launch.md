@@ -1,6 +1,6 @@
 # Go-live checklist
 
-Everything that has to be true before Lociros takes its first live payment. Work top to bottom; each line links to where it is explained. Hosting is unchanged: Vercel (frontend and admin), Supabase (Postgres and Auth), FastAPI in Docker on the Lightsail 4 GB box behind Caddy.
+Everything that has to be true before Lociros takes its first live payment. Work top to bottom; each line links to where it is explained. Hosting is unchanged: Vercel (frontend and admin), Supabase (Postgres and Auth), FastAPI in Docker on the Lightsail 4 GB box: two API replicas and Redis behind nginx.
 
 ## 1. Stripe in test mode
 
@@ -32,8 +32,13 @@ Everything that has to be true before Lociros takes its first live payment. Work
 
 ## 3. API box
 
-- [ ] `api.lociros.com` A record → static IP; `sudo sh infra/caddy-setup.sh api.lociros.com` ([deploy §2e](deploy.md#2e-https-with-caddy)).
-- [ ] Lightsail firewall: 22, 80, 443 only. `curl http://PUBLIC_IP:8000/health` from your laptop must fail.
+- [ ] `PROXY_SECRET` in `/opt/lociros/.env` (`openssl rand -hex 32`).
+- [ ] `sh lightsail-run.sh` brings up `lociros-api-1`, `lociros-api-2`, and `lociros-redis`; both replicas answer `/api/health/ready` on 8001 and 8002.
+- [ ] `api.lociros.com` A record → static IP; `sudo sh infra/nginx-setup.sh api.lociros.com you@example.com` ([deploy §2e](deploy.md#2e-https-and-load-balancing-with-nginx)). It also stops Caddy if an earlier setup installed it.
+- [ ] Lightsail firewall: 22, 80, 443 only. `curl http://PUBLIC_IP:8001/health` from your laptop must fail.
+- [ ] `swapon --show` lists the 2 GB swap file.
+- [ ] The startup log has no "PROXY_SECRET is not set" or "REDIS_URL is not set" lines.
+- [ ] Zero-downtime check: run `scripts/loadtest.py` against `https://api.lociros.com` while `scripts/deploy-api.sh` runs; the report shows no errors ([deploy §2f](deploy.md#2f-capacity)).
 - [ ] `/opt/lociros/.env` has every production variable in [deploy §4](deploy.md#4-backend-environment-production). The startup log has no "billing is not configured" or "SUPABASE_SERVICE_ROLE_KEY is not set" lines.
 - [ ] `APP_ENV=production` (turns on the paywall, `REQUIRE_AUTH`, secure cookies, and turns off legacy tokens and `/docs`).
 - [ ] Migrations applied: `scripts/deploy-api.sh` runs `alembic upgrade head` before the restart. `alembic current` reports `0008_billing`.
@@ -41,7 +46,7 @@ Everything that has to be true before Lociros takes its first live payment. Work
 
 ## 4. Vercel
 
-- [ ] Frontend: `NLP_BACKEND_URL=https://api.lociros.com`, `NEXT_PUBLIC_SITE_URL`, Supabase URL and publishable key, price and trial env, `NEXT_PUBLIC_CONTACT_EMAIL`, `NEXT_PUBLIC_SENTRY_DSN` ([deploy §3](deploy.md#3-frontend-on-vercel)).
+- [ ] Frontend: `NLP_BACKEND_URL=https://api.lociros.com`, `PROXY_SECRET` (same as the box), `NEXT_PUBLIC_SITE_URL`, Supabase URL and publishable key, price and trial env, `NEXT_PUBLIC_CONTACT_EMAIL`, `NEXT_PUBLIC_SENTRY_DSN` ([deploy §3](deploy.md#3-frontend-on-vercel)).
 - [ ] Admin: same backend URL, `ADMIN_EMAIL`, `ADMIN_PRICE_*`, Sentry DSN.
 - [ ] `lociros.com` and `www` on the frontend project; `admin.lociros.com` on the admin project.
 - [ ] Response headers on `https://lociros.com/` include `content-security-policy` and `strict-transport-security`. Sign-in, a passage, audio, and checkout all work with the CSP on (browser console clean).

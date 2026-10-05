@@ -1,0 +1,17 @@
+# Cap the load-test stack to the production box: Lightsail $24 (2 vCPUs, 4 GB)
+# and the smallest Supabase compute.
+#
+#   API_CPUS=1.0  burst: what the box does while it has CPU burst capacity
+#   API_CPUS=0.2  sustained: the plan's 20%-per-vCPU baseline, all day
+#
+#   API_CPUS=0.2 docker compose -f infra/loadtest/compose.yml -f infra/loadtest/lightsail.yml up -d
+services:
+  api-1:
+    cpus: ${API_CPUS:-1.0}
+    mem_limit: 1800m
+  api-2:
+    cpus: ${API_CPUS:-1.0}
+    mem_limit: 1800m
+  postgres:
+    cpus: 1.0
+    mem_limit: 1g

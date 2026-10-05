@@ -20,7 +20,7 @@
     "max_forbidden_case_rate": 1.0,
     "max_forbidden_tense_rate": 1.0,
     "max_forbidden_pos_rate": 0.05,
-    "prompt_constraints": "Use polite です/ます style only. Allowed particles: は, が, を, に, の, と, で, も. Simple noun and adjective sentences. Do NOT use て-form, plain past (た), plain negative (ない), ている, conditionals (ば/たら/なら), potential, causative, passive, relative clauses, or keigo. Keep kanji to very basic N5 characters; prefer kana when unsure."
+    "prompt_constraints": "Use polite です/ます style only. Allowed particles: は, が, を, に, の, と, で, も. Simple noun and adjective sentences. Do NOT use て-form, plain past (た), plain negative (ない), ている, conditionals (ば/たら/なら), potential, causative, passive, relative clauses, or keigo. Spell each word as it appears in the allowed-word list."
   },
   "A2": {
     "forbidden_constructions": [

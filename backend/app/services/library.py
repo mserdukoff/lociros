@@ -12,13 +12,13 @@ from app.services.learner import (
     DEFAULT_LEVEL,
     calibration_passed,
     get_learner,
-    lemma_token_stats,
     list_stars,
+    passage_lemmas,
     pick_next_id,
     read_ids,
     recent_taps,
     seen_lemmas,
-    tokens_from_row,
+    shelf_rows,
 )
 from app.services.news import news_notice, saved_news_ids
 
@@ -60,16 +60,7 @@ def list_library(
 ) -> LibraryResponse:
     if isinstance(identity, str):
         identity = Identity(user_id=None, device_id=identity)
-    rows = (
-        db.query(PassageRow)
-        .filter(
-            PassageRow.language == language,
-            PassageRow.shelf_status == SHELF_PUBLIC,
-        )
-        .order_by(PassageRow.created_at.desc())
-        .all()
-    )
-    rows = [r for r in rows if calibration_passed(r)]
+    rows = shelf_rows(db, language)
     placement = DEFAULT_LEVEL
     placed = True
     seen: set[str] = set()
@@ -89,12 +80,13 @@ def list_library(
             placed = bool(getattr(learner, "placed", 0)) or bool(already_read)
 
     next_id = pick_next_id(
-        db, language, placement, already_read, tapped=tapped
+        db, language, placement, already_read, tapped=tapped, shelf=rows
     )
+    lemmas = passage_lemmas(db, rows)
     items: list[LibraryItem] = []
     for row in rows:
-        tokens = tokens_from_row(row)
-        new, recycled = lemma_token_stats(tokens, language, seen)
+        entry = lemmas.get(row.id)
+        new, recycled = entry.stats(seen) if entry else (0, 0)
         total = new + recycled
         pct = round(new / total, 3) if total else 0.0
         items.append(

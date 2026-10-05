@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { backendUrl } from "@/lib/backend";
+import { CLIENT_IP_HEADER, PROXY_HEADER, backendUrl, clientIpHeaders } from "@/lib/backend";
 import { accessToken } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +17,8 @@ const HOP = new Set([
   "host",
   "content-length",
   "authorization",
+  PROXY_HEADER,
+  CLIENT_IP_HEADER,
 ]);
 
 /** Backend routes the public app never calls. Operator routes are served only to admin.lociros.com; legacy auth is Supabase now. */
@@ -34,6 +36,9 @@ async function proxy(req: NextRequest, path: string[]) {
       headers.set(key, value);
     }
   });
+  for (const [key, value] of Object.entries(clientIpHeaders(req.headers))) {
+    headers.set(key, value);
+  }
   const token = await accessToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
   const method = req.method.toUpperCase();

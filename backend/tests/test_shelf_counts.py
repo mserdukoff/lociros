@@ -47,3 +47,38 @@ def test_shelf_counts_only_counts_passages_a_reader_can_open():
     db.commit()
     assert library.shelf_counts(db) == {"ja": 2, "it": 1}
     library._counts_cache = None
+
+
+def _tok(text, lemma, pos, is_word=True):
+    return {"text": text, "lemma": lemma, "is_word": is_word, "morph": {"pos": pos, "lemma": lemma or text}}
+
+
+def test_cached_lemma_stats_match_token_stats():
+    from app.services import learner
+
+    learner.clear_lemma_cache()
+    db = _session()
+    row = _passage("p", "ru")
+    row.tokens_json = json.dumps(
+        [
+            _tok("кошка", "кошка", "NOUN"),
+            _tok("и", "и", "CONJ"),
+            _tok("кошки", "кошка", "NOUN"),
+            _tok("спит", "спать", "VERB"),
+            _tok(".", None, "PNCT", is_word=False),
+        ]
+    )
+    db.add(row)
+    db.commit()
+    seen = {"кошка"}
+    expected = learner.lemma_token_stats(learner.tokens_from_row(row), "ru", seen)
+
+    entry = learner.passage_lemmas(db, learner.shelf_rows(db, "ru"))["p"]
+    assert entry.stats(seen) == expected
+    assert "и" in entry.all
+
+    row.tokens_json = "[]"
+    db.commit()
+    again = learner.passage_lemmas(db, learner.shelf_rows(db, "ru"))["p"]
+    assert again.stats(seen) == expected, "second call is served from the cache"
+    learner.clear_lemma_cache()

@@ -8,6 +8,9 @@ RUN apt-get update \
     && useradd --create-home --uid 1000 levla
 
 COPY backend/requirements.txt /app/backend/requirements.txt
+# camel-tools depends on torch; the default wheel bundles ~8 GB of CUDA
+# libraries this CPU-only box never loads. Install the CPU build first.
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 RUN pip install --no-cache-dir -r /app/backend/requirements.txt \
     && python -m spacy download it_core_news_md || true \
     && mkdir -p /app/camel_data \
@@ -26,6 +29,9 @@ ENV PYTHONPATH=/app/backend
 ENV PYTHONUNBUFFERED=1
 ENV APP_ENV=production
 ENV CAMELTOOLS_DATA=/app/camel_data
+# glibc gives each request thread its own heap arena; with the 40-thread
+# request pool that roughly doubled resident memory per replica.
+ENV MALLOC_ARENA_MAX=2
 
 USER levla
 EXPOSE 8000

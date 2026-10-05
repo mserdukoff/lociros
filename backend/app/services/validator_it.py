@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from app.models.schemas import Token
 from app.services.data import grammar_rules, level_rank, vocab_bands
 from app.services.validator import ValidationResult, vocab_exempt
@@ -106,13 +108,49 @@ def _in_passato_prossimo(tokens: list[Token], index: int, tok: Token) -> bool:
     return False
 
 
-def _is_clitic(tok: Token) -> bool:
+TONIC_PRONOUNS = {"me", "te", "sé"}
+# Every imperfetto has the -v- ending except essere's (ero, era, eravamo...).
+_IMPERFETTO = re.compile(r"(?:[aei]v(?:o|i|a|amo|ate|ano)|^er(?:o|i|a|avamo|avate|ano))$")
+
+
+def _is_clitic(tok: Token, prev: Token | None = None) -> bool:
     lemma = (tok.lemma or "").lower()
     if lemma in CLITIC_CLUSTERS:
         return True
     if lemma not in CLITIC_LEMMAS:
         return False
+    # "per me", "con te": stressed pronouns after a preposition, not clitics.
+    if (tok.text or "").lower() in TONIC_PRONOUNS and prev is not None and _pos(prev) == "ADP":
+        return False
     return _pos(tok) == "PRON"
+
+
+def _tense(tok: Token) -> str:
+    """spaCy sometimes tags present forms ('tornano') as imperfetto."""
+    tense = (tok.morph.tense if tok.morph else None) or ""
+    if tense == "impf" and not _IMPERFETTO.search((tok.text or "").lower()):
+        return "pres"
+    return tense
+
+
+def _has_subject_before(tokens: list[Token], index: int) -> bool:
+    for t in reversed(tokens[:index]):
+        if not t.is_word:
+            if any(ch in t.text for ch in ".!?…:;,"):
+                return False
+            continue
+        if _pos(t) in {"NOUN", "PROPN"} or (_pos(t) == "PRON" and not _is_clitic(t)):
+            return True
+    return False
+
+
+def _mood(tokens: list[Token], index: int, tok: Token) -> str:
+    """spaCy tags 'Marco cammina' as imperative (3sg present = 2sg imperative).
+    A verb with a subject before it in the same clause is indicative."""
+    mood = (tok.morph.mood if tok.morph else None) or ""
+    if mood == "impr" and _has_subject_before(tokens, index):
+        return "indc"
+    return mood
 
 
 def _detect_constructions(tokens: list[Token], i: int, tok: Token) -> list[str]:
@@ -120,7 +158,7 @@ def _detect_constructions(tokens: list[Token], i: int, tok: Token) -> list[str]:
     lemma = tok.lemma or ""
     morph = tok.morph
     form = (morph.form if morph else None) or ""
-    tense = (morph.tense if morph else None) or ""
+    tense = _tense(tok)
     mood = (morph.mood if morph else None) or ""
     pos = (morph.pos if morph else None) or ""
     prev = _prev_word(tokens, i)
@@ -156,11 +194,11 @@ def _detect_constructions(tokens: list[Token], i: int, tok: Token) -> list[str]:
         if not _is_sentence_initial(tokens, i):
             hits.append("relative_che")
 
-    if _is_clitic(tok):
+    if _is_clitic(tok, prev):
         hits.append("clitic")
         if lemma in CLITIC_CLUSTERS:
             hits.append("clitic_cluster")
-        elif nxt and _is_clitic(nxt):
+        elif nxt and _is_clitic(nxt, tok):
             hits.append("clitic_cluster")
 
     return hits
@@ -205,13 +243,15 @@ def validate_tokens_it(tokens: list[Token], level: str) -> ValidationResult:
                 conj_hits += 1
                 flag(f"it:{cons} ({tok.text})")
 
-        if form == "fin" and m.tense and m.tense not in allowed_tenses:
+        tense = _tense(tok)
+        if form == "fin" and tense and tense not in allowed_tenses:
             tense_hits += 1
-            flag(f"tense:{m.tense} ({tok.text})")
+            flag(f"tense:{tense} ({tok.text})")
 
-        if m.mood and m.mood not in allowed_moods:
+        mood = _mood(tokens, i, tok)
+        if mood and mood not in allowed_moods:
             tense_hits += 1
-            flag(f"mood:{m.mood} ({tok.text})")
+            flag(f"mood:{mood} ({tok.text})")
 
         if lemma in SUBORDINATE_LEMMAS:
             if lemma == "quando" and _is_sentence_initial(tokens, i):

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import threading
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 
 from app.models.db import (
     SHELF_PUBLIC,
@@ -99,6 +101,90 @@ def lemma_token_stats(
 
 def tokens_from_row(row: PassageRow) -> list[Token]:
     return [Token.model_validate(t) for t in json.loads(row.tokens_json)]
+
+
+@dataclass(frozen=True)
+class PassageLemmas:
+    content: dict[str, int]
+    """Content-word lemma -> token count, as lemma_token_stats counts them."""
+    all: frozenset[str]
+    """Every lemma in the passage, function words included."""
+
+    def stats(self, seen: set[str]) -> tuple[int, int]:
+        recycled = sum(n for lemma, n in self.content.items() if lemma in seen)
+        return sum(self.content.values()) - recycled, recycled
+
+
+# tokens_json is written once when a passage is created, so its lemmas can be
+# kept by passage id. Parsing and validating every shelf passage's tokens on
+# each library request was most of the API's CPU time.
+_LEMMA_CACHE_MAX = 20_000
+_lemma_cache: dict[str, PassageLemmas] = {}
+_lemma_lock = threading.Lock()
+
+# Shelf listings never need these; loading them for every passage per request
+# is most of the bytes read from Postgres.
+_SHELF_DEFERRED = (
+    PassageRow.text,
+    PassageRow.tokens_json,
+    PassageRow.translation,
+    PassageRow.audio_cues_json,
+    PassageRow.comprehension_json,
+)
+
+
+def _lemmas_from_json(tokens_json: str, language: str) -> PassageLemmas:
+    try:
+        tokens = [Token.model_validate(t) for t in json.loads(tokens_json)]
+    except Exception:
+        return PassageLemmas(content={}, all=frozenset())
+    content: dict[str, int] = {}
+    for tok in content_tokens(tokens, language):
+        content[tok.lemma] = content.get(tok.lemma, 0) + 1  # type: ignore[index]
+    return PassageLemmas(
+        content=content,
+        all=frozenset(tok.lemma for tok in tokens if tok.lemma),
+    )
+
+
+def passage_lemmas(db: Session, rows: list[PassageRow]) -> dict[str, PassageLemmas]:
+    """Lemma index for `rows`, reading tokens_json only for passages not yet cached."""
+    with _lemma_lock:
+        found = {row.id: _lemma_cache[row.id] for row in rows if row.id in _lemma_cache}
+    missing = {row.id: row.language or "ru" for row in rows if row.id not in found}
+    if missing:
+        fetched = (
+            db.query(PassageRow.id, PassageRow.tokens_json)
+            .filter(PassageRow.id.in_(list(missing)))
+            .all()
+        )
+        parsed = {pid: _lemmas_from_json(raw, missing[pid]) for pid, raw in fetched}
+        with _lemma_lock:
+            if len(_lemma_cache) + len(parsed) > _LEMMA_CACHE_MAX:
+                _lemma_cache.clear()
+            _lemma_cache.update(parsed)
+        found.update(parsed)
+    return found
+
+
+def clear_lemma_cache() -> None:
+    with _lemma_lock:
+        _lemma_cache.clear()
+
+
+def shelf_rows(db: Session, language: str) -> list[PassageRow]:
+    """Public, calibrated passages in `language`, newest first, without heavy columns."""
+    rows = (
+        db.query(PassageRow)
+        .options(*(defer(column) for column in _SHELF_DEFERRED))
+        .filter(
+            PassageRow.language == language,
+            PassageRow.shelf_status == SHELF_PUBLIC,
+        )
+        .order_by(PassageRow.created_at.desc())
+        .all()
+    )
+    return [r for r in rows if calibration_passed(r)]
 
 
 def calibration_passed(row: PassageRow) -> bool:
@@ -512,18 +598,6 @@ def unstar_lemma(
     return True
 
 
-def _row_lemmas(row: PassageRow) -> set[str]:
-    try:
-        data = json.loads(row.tokens_json)
-    except Exception:
-        return set()
-    return {
-        item.get("lemma")
-        for item in data
-        if isinstance(item, dict) and item.get("lemma")
-    }
-
-
 def pick_next_id(
     db: Session,
     language: str,
@@ -531,17 +605,11 @@ def pick_next_id(
     already_read: set[str],
     exclude_id: str | None = None,
     tapped: set[str] | None = None,
+    shelf: list[PassageRow] | None = None,
 ) -> str | None:
-    rows = (
-        db.query(PassageRow)
-        .filter(
-            PassageRow.language == language,
-            PassageRow.shelf_status == SHELF_PUBLIC,
-        )
-        .order_by(PassageRow.created_at.desc())
-        .all()
-    )
-    rows = [r for r in rows if calibration_passed(r) and (r.genre or "") != "news"]
+    """`shelf` is shelf_rows(db, language) when the caller already has it."""
+    rows = shelf if shelf is not None else shelf_rows(db, language)
+    rows = [r for r in rows if (r.genre or "") != "news"]
     if not rows:
         return None
 
@@ -570,10 +638,13 @@ def pick_next_id(
         return series_id
 
     looked = tapped or set()
+    lemmas = passage_lemmas(db, rows) if looked else {}
 
     def score(row: PassageRow, prefer_taps: bool) -> tuple[int, float]:
         created = row.created_at.timestamp() if row.created_at else 0.0
-        overlap = len(_row_lemmas(row) & looked) if prefer_taps and looked else 0
+        overlap = 0
+        if prefer_taps and row.id in lemmas:
+            overlap = len(lemmas[row.id].all & looked)
         return (-overlap, -created)
 
     for index, level in enumerate(_level_priority(placement)):

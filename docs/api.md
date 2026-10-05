@@ -90,7 +90,7 @@ Per identity (user, else device id, else client IP) in a sliding one-minute wind
 | `POST /gloss` | 120 |
 | `POST /billing/checkout` | 10 |
 
-The windows are in process memory. Production runs one API process (`WEB_CONCURRENCY=1`); with more processes each keeps its own window.
+The windows live in Redis when `REDIS_URL` is set, so they hold across API replicas; without it each process keeps its own. Each identity also shares a looser per-IP window (5× the limit). The IP is the visitor's address forwarded by the Vercel proxy with `X-Lociros-Proxy` (must equal `PROXY_SECRET`) and `X-Client-IP`; otherwise the connecting address. IPv6 addresses are grouped by /64. In front of all of this, nginx allows each visitor 30 requests a second (burst 60) and 40 open connections.
 
 `POST /generate` is also capped at `GENERATE_MONTHLY_CAP` new passages per identity per calendar month (default 10), and at `GENERATE_MAX_PENDING` unfinished jobs (default 3). A cache hit on an existing topic does not count. With `REQUIRE_AUTH=true`, it additionally requires a signed-in user.
 

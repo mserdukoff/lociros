@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from functools import lru_cache
+
 from app.models.schemas import MorphInfo, Token
 from app.services.data import gloss_lexicon
 from app.services.llm import gloss_lemmas
@@ -73,13 +75,25 @@ def resolve_gloss(lemma: str, language: str = "ru", morph: MorphInfo | None = No
     already-saved words, the same way kanji and grammar are recomputed on
     every read.
     """
+    if morph is None:
+        return _resolve_gloss_cached(lemma, language)
     gloss = lookup_gloss(lemma, language)
     if gloss:
         return gloss
-    if morph is None:
-        from app.services.morph import analyze_word
-
-        morph = analyze_word(lemma, language)
     if is_proper_noun(morph):
+        return NAME_GLOSS
+    return None
+
+
+@lru_cache(maxsize=50_000)
+def _resolve_gloss_cached(lemma: str, language: str) -> str | None:
+    """Every passage view resolves each gloss-less lemma; without the cache that
+    re-ran morphology (spaCy for Italian) per word per view."""
+    gloss = lookup_gloss(lemma, language)
+    if gloss:
+        return gloss
+    from app.services.morph import analyze_word
+
+    if is_proper_noun(analyze_word(lemma, language)):
         return NAME_GLOSS
     return None

@@ -6,7 +6,7 @@ Lociros’s differentiator is that CEFR is a **ruleset plus an analyzer**, not a
 topic + CEFR + genre + language
         │
         ▼
-  LLM (OpenRouter)  ── grammar constraints + lemma sample
+  LLM (OpenRouter)  ── grammar constraints + allowed-word list
         │
         ▼
   Morphological analysis  ── tokens, lemmas, POS, readings
@@ -18,7 +18,7 @@ topic + CEFR + genre + language
   CEFR validator  ── rates + flags
         │
         ├── pass → persist
-        └── fail → rewrite with flags → keep the less-severe draft
+        └── fail → edit the draft with flags → keep the less-severe draft
         │
         ▼
   English translation (best-effort)
@@ -29,17 +29,19 @@ topic + CEFR + genre + language
 
 ## Generation (`llm.py`, `generate.py`)
 
-- Model: `LLM_MODEL` (default `openai/gpt-4o-mini`) via OpenRouter (`https://openrouter.ai/api/v1`).
-- First draft temperature **0.7**, 45s timeout. Correction pass **0.4**.
-- Prompt includes:
+- Model: `LLM_MODEL` (default `google/gemini-3.1-flash-lite`, falling back to `openai/gpt-4o-mini`) via OpenRouter (`https://openrouter.ai/api/v1`), routed to the highest-throughput provider.
+- First draft temperature **0.7**, 60 s hard deadline. Correction pass **0.4**.
+- Prompt (`build_passage_prompt`) includes:
   - language-specific length: Russian **400–700 words**; Italian **350–600 words**; Arabic **280–500 words**; Japanese **22–40 short sentences**
   - `prompt_constraints` from `data/grammar/{ru,ja,it,ar}_cefr.json` for that level
-  - a deterministic-ish random sample of **~48 lemmas** at or below the target band (`random.Random(language + level + str(len(pool)))`)
+  - **every** single-word lemma at or below the target band (`allowed_words`), with word-choice rules: content words must come from the list, rephrase or drop ideas that need other words, repeat words rather than reach for synonyms, short sentences, spell Japanese as listed
   - genre hint, if the genre is one of `daily_life`, `travel`, `news`, `folklore`, `work`
   - script notes: Russian must mark ё and avoid Latin; Italian must mark accents (è, perché, città); Arabic must be unvowelled MSA with hamza; Japanese must not insert spaces or furigana
-- Response must be JSON `{ "title", "text" }`. Markdown fences and a greedy `{…}` extract are tolerated. Empty text raises. Empty title falls back to the topic.
+- Response must be JSON `{ "title", "text", "translation" }` (JSON mode). Markdown fences and a greedy `{…}` extract are tolerated; a reply that still does not parse is requested once more. Empty text raises. Empty title falls back to the topic.
 
-If calibration fails, a second call is made with up to 20 validator flags. **Severity** is `flags + weighted rates` (see below). The less-severe attempt is stored. A draft that still fails is **quarantined** (`shelf_status=quarantine`) and is not returned by the public library, next-text picker, or `/api/passages/{id}` unless a signed-in admin sends `?lab=1`.
+If calibration fails, a second call sends the failed draft back with the over-level words to replace and the grammar flags to fix, and asks for an edit rather than a new passage. Tuned October 2026 with `scripts/tune_prompts.py` on Gemini 3.1 Flash Lite (48 passages each, all languages and levels): the old prompt (48 sample words, rewrite from scratch) passed **35%** after the rewrite; the current prompt passes **68%** (B1 and B2 nearly all), with the mean over-level word rate down from 25% to 13%. Sentence-count targets, per-level tips, and a final length check were tried and did not help. Most remaining failures are A1 (Russian nominative-only is hard to hold, and Arabic A1 forbids Form IV أحبّ "love"). Analyzer false positives fixed afterwards lifted the same saved passages from 32/47 to 37/47 (Arabic 6/12 to 10/12): hollow and geminate Arabic verbs (قال، يمرّ) are no longer read as Forms III and II; الآن is not إنّ; لأن is "because"; ليس is present; يوجد is not passive; أنا + أ-verb is present; adverbs like الآن، أيضاً، جداً match the vocabulary list by their written form; an Italian verb with a subject before it is not imperative; imperfetto needs a -v- ending; "per me" is not a clitic. Unvowelled noun/verb pairs (سمك "fish" / "he fished") remain ambiguous. Passages run shorter than the length line asks, about 120 words on average.
+
+The flags sent back are up to 20 validator flags. **Severity** is `flags + weighted rates` (see below). The less-severe attempt is stored. A draft that still fails is **quarantined** (`shelf_status=quarantine`) and is not returned by the public library, next-text picker, or `/api/passages/{id}` unless a signed-in admin sends `?lab=1`.
 
 Warnings that can land on the passage:
 

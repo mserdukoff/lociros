@@ -32,6 +32,8 @@ _reclaim_lock = threading.Lock()
 
 _stop = threading.Event()
 _threads: list[threading.Thread] = []
+_in_flight: set[str] = set()
+_in_flight_lock = threading.Lock()
 
 
 def _is_postgres() -> bool:
@@ -192,6 +194,48 @@ def claim_next_job(db: Session) -> GenerationJobRow | None:
 
 
 def _process_job(job_id: str) -> None:
+    with _in_flight_lock:
+        _in_flight.add(job_id)
+    try:
+        _run_job(job_id)
+    finally:
+        with _in_flight_lock:
+            _in_flight.discard(job_id)
+
+
+def requeue_in_flight() -> int:
+    """Hand this process's running jobs back to the queue so another replica picks
+    them up now instead of after STALE_RUNNING_SECONDS."""
+    with _in_flight_lock:
+        ids = list(_in_flight)
+    if not ids:
+        return 0
+    db = SessionLocal()
+    try:
+        n = (
+            db.query(GenerationJobRow)
+            .filter(
+                GenerationJobRow.id.in_(ids),
+                GenerationJobRow.status == STATUS_RUNNING,
+            )
+            .update(
+                {GenerationJobRow.status: STATUS_PENDING, GenerationJobRow.started_at: None},
+                synchronize_session=False,
+            )
+        )
+        db.commit()
+        if n:
+            logger.info("Requeued %s in-flight generation job(s) on shutdown", n)
+        return n
+    except Exception:
+        logger.exception("Could not requeue in-flight generation jobs")
+        db.rollback()
+        return 0
+    finally:
+        db.close()
+
+
+def _run_job(job_id: str) -> None:
     db = SessionLocal()
     try:
         job = db.get(GenerationJobRow, job_id)
@@ -286,6 +330,7 @@ def stop_workers() -> None:
     for t in _threads:
         t.join(timeout=2.0)
     _threads.clear()
+    requeue_in_flight()
 
 
 def job_owned_by(job: GenerationJobRow, identity: Identity) -> bool:

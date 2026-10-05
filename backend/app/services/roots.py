@@ -143,8 +143,16 @@ def pattern_to_form(pattern: str | None) -> str | None:
         # يَفْعَل is Form I imperfect; أَفْعَل is IV.
         if arabic.startswith("أ"):
             return "IV"
+    # Hollow verbs (قال 1ا3, كان, عاد, جاء 1اء) have no middle radical in the
+    # pattern; their long ā is the weak root letter, not Form III's فاعَل.
+    if "1" in arabic and "2" not in arabic and "ا" in arabic:
+        return "IV" if arabic.startswith("أ") else "I"
     if "ا" in arabic[1:3] and not arabic.startswith("ا"):
         return "III"
+    # Geminate roots (مرّ 1َ2ّ, أحبّ أَ1َ2ّ, يُحبّ يُ1ِ2ّ) double the second
+    # radical in place of the third; Form II doubles it and keeps the third.
+    if ("ّ" in p or "~" in p) and "1" in arabic and "2" in arabic and "3" not in arabic:
+        return "IV" if arabic.startswith("أ") or p.startswith(("يُ", "تُ", "نُ", "أُ")) else "I"
     if "ّ" in p or "~" in p:
         return "II"
     if re.search(r"faE|CaC|yaC|yuC|yiC|taC|tuC|naC", compact, re.I):

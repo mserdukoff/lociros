@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import re
 import threading
-from functools import lru_cache
 
+from app.core.once import load_once
 from app.models.schemas import MorphInfo, Token
 from app.services.data import vocab_bands
 from app.services.kanji import breakdown
@@ -76,7 +76,7 @@ def kata_to_hira(text: str) -> str:
     return "".join(out)
 
 
-@lru_cache(maxsize=1)
+@load_once
 def sudachi():
     from sudachipy import dictionary, tokenizer
 

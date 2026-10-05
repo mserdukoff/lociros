@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import json
 import logging
-import random
 import re
+import threading
+from functools import lru_cache
+from types import SimpleNamespace
 
+import httpx
 from openai import OpenAI
 
 from app.core.config import settings
@@ -49,27 +52,138 @@ LANG_META = {
 }
 
 
+_client_lock = threading.Lock()
+_shared_client: OpenAI | None = None
+
+
 def _client() -> OpenAI:
+    global _shared_client
     if not settings.openrouter_api_key:
         raise RuntimeError(
             "OPENROUTER_API_KEY is not set. Add it to backend/.env to generate passages."
         )
-    return OpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=settings.openrouter_api_key,
-        default_headers={
-            "HTTP-Referer": settings.public_base_url,
-            "X-Title": "Lociros",
-        },
+    with _client_lock:
+        if _shared_client is None:
+            _shared_client = OpenAI(
+                base_url="https://openrouter.ai/api/v1",
+                api_key=settings.openrouter_api_key,
+                default_headers={
+                    "HTTP-Referer": settings.public_base_url,
+                    "X-Title": "Lociros",
+                },
+                max_retries=2,
+            )
+        return _shared_client
+
+
+def routing_body() -> dict:
+    """OpenRouter routing: fastest provider first, then fallback models on errors."""
+    body: dict = {}
+    if settings.llm_provider_sort:
+        body["provider"] = {"sort": settings.llm_provider_sort}
+    fallbacks = [
+        m.strip()
+        for m in settings.llm_fallback_models.split(",")
+        if m.strip() and m.strip() != settings.llm_model
+    ]
+    if fallbacks:
+        body["models"] = [settings.llm_model, *fallbacks]
+    if settings.llm_reasoning_effort:
+        body["reasoning"] = {"effort": settings.llm_reasoning_effort}
+    return body
+
+
+def _complete(
+    prompt: str,
+    *,
+    temperature: float,
+    timeout: float,
+    json_mode: bool = False,
+) -> str:
+    """One chat completion with a hard wall-clock deadline.
+
+    The SDK timeout resets whenever bytes arrive, and OpenRouter sends keep-alive
+    comments while a provider is busy, so only a watchdog bounds the total time.
+    """
+    kwargs: dict = {}
+    if json_mode:
+        kwargs["response_format"] = {"type": "json_object"}
+    stream = _client().chat.completions.create(
+        model=settings.llm_model,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=temperature,
+        timeout=httpx.Timeout(timeout, connect=10.0),
+        stream=True,
+        stream_options={"include_usage": True},
+        extra_body=routing_body() or None,
+        **kwargs,
+    )
+    expired = threading.Event()
+
+    def _expire() -> None:
+        expired.set()
+        stream.response.close()
+
+    watchdog = threading.Timer(timeout, _expire)
+    watchdog.daemon = True
+    watchdog.start()
+    parts: list[str] = []
+    usage = None
+    model = ""
+    try:
+        for chunk in stream:
+            model = chunk.model or model
+            if chunk.usage is not None:
+                usage = chunk.usage
+            if chunk.choices and chunk.choices[0].delta.content:
+                parts.append(chunk.choices[0].delta.content)
+    except Exception:
+        if expired.is_set():
+            raise TimeoutError(f"LLM call exceeded {timeout:.0f}s") from None
+        raise
+    finally:
+        watchdog.cancel()
+        stream.close()
+    if expired.is_set():
+        raise TimeoutError(f"LLM call exceeded {timeout:.0f}s")
+    record_usage(SimpleNamespace(usage=usage, model=model))
+    return "".join(parts)
+
+
+@lru_cache(maxsize=32)
+def allowed_words(level: str, language: str) -> str:
+    """Every single-word lemma at or below the level, for the prompt (a few thousand tokens)."""
+    return ", ".join(
+        sorted(w for w in lemmas_at_or_below(level, language) if " " not in w and "(" not in w)
     )
 
 
-def _lemma_sample(level: str, language: str, n: int = 48) -> list[str]:
-    pool = lemmas_at_or_below(level, language)
-    if len(pool) <= n:
-        return pool
-    rng = random.Random(language + level + str(len(pool)))
-    return sorted(rng.sample(pool, n))
+def _correction_block(level: str, flags: list[str], previous_text: str | None) -> str:
+    """Ask for an edit of the failed draft; rewriting from scratch drifts again."""
+    words = [f.split(":", 1)[1].split("=")[0] for f in flags if f.startswith("lemma:")]
+    grammar = [f for f in flags if not f.startswith("lemma:")]
+    if not previous_text:
+        return (
+            "\nThe previous draft drifted out of level. Rewrite the whole passage. "
+            f"Fix these issues: {'; '.join(flags[:20])}. "
+            "Do not reuse the over-level constructions.\n"
+        )
+    parts = [
+        "\nYOUR PREVIOUS DRAFT FAILED THE LEVEL CHECK. Edit it: keep the story and every "
+        "sentence that is fine, and change only what is listed below."
+    ]
+    if words:
+        parts.append(
+            f"Words above {level}: replace each with an allowed word, or rephrase: "
+            + ", ".join(words[:20])
+        )
+    if grammar:
+        parts.append(
+            f"Grammar above {level}: rewrite those sentences with allowed grammar: "
+            + "; ".join(grammar[:12])
+        )
+    parts.append(f"Previous draft:\n{previous_text}\n")
+    return "\n".join(parts)
 
 
 def _parse_json(content: str) -> dict:
@@ -98,11 +212,59 @@ def generate_passage_text(
     known_lemmas: list[str] | None = None,
     reuse_lemmas: list[str] | None = None,
     news_brief: str | None = None,
+    previous_text: str | None = None,
 ) -> tuple[str, str, str | None]:
     """Return (title, text, english translation). Raises if the LLM is not configured."""
+    prompt = build_passage_prompt(
+        level,
+        topic,
+        genre,
+        correction_flags=correction_flags,
+        language=language,
+        known_lemmas=known_lemmas,
+        reuse_lemmas=reuse_lemmas,
+        news_brief=news_brief,
+        previous_text=previous_text,
+    )
+    for attempt in range(2):
+        content = _complete(
+            prompt,
+            temperature=0.7 if not correction_flags else 0.4,
+            timeout=60.0,
+            json_mode=True,
+        )
+        try:
+            data = _parse_json(content)
+            break
+        except json.JSONDecodeError:
+            if attempt:
+                raise
+            logger.warning("Passage JSON did not parse; asking again")
+    title = str(data.get("title") or "").strip()
+    text = str(data.get("text") or "").strip()
+    translation = str(data.get("translation") or "").strip() or None
+    if not text:
+        raise RuntimeError("LLM returned an empty passage")
+    if not title:
+        title = topic
+    return title, text, translation
+
+
+def build_passage_prompt(
+    level: str,
+    topic: str,
+    genre: str | None = None,
+    *,
+    correction_flags: list[str] | None = None,
+    language: str = "ru",
+    known_lemmas: list[str] | None = None,
+    reuse_lemmas: list[str] | None = None,
+    news_brief: str | None = None,
+    previous_text: str | None = None,
+) -> str:
     meta = LANG_META.get(language, LANG_META["ru"])
     rules = grammar_rules(language)[level]
-    sample = ", ".join(_lemma_sample(level, language))
+    words = allowed_words(level, language)
     genre_line = ""
     if genre and genre in GENRE_HINTS:
         genre_line = f"Genre: {GENRE_HINTS[genre]}.\n"
@@ -144,7 +306,7 @@ def generate_passage_text(
             f"\nThis is today's news for one learner at CEFR {level}. "
             "Rewrite the source into that level and no higher. "
             "Use only the grammar allowed above. "
-            "Say each fact with words from the in-band sample. "
+            "Say each fact with the allowed words. "
             "If a fact needs a harder word or a harder pattern, leave that fact out. "
             "Do not copy words from the source language into the title or the text. "
             "Do not invent events, names, places, or dates. "
@@ -155,14 +317,14 @@ def generate_passage_text(
 
     correction = ""
     if correction_flags:
-        listed = "; ".join(correction_flags[:20])
-        correction = (
-            "\nThe previous draft drifted out of level. Rewrite the whole passage. "
-            f"Fix these issues: {listed}. "
-            "Do not reuse the over-level constructions.\n"
-        )
+        correction = _correction_block(level, correction_flags, previous_text)
 
     lang_name = meta["name"]
+    sentence = "5 to 10 words" if level in {"A1", "A2"} else "8 to 15 words"
+    spelling = {
+        "ja": "- Spell every word exactly as it appears in the list (the same kanji or kana).\n",
+        "ar": "- The list is written without hamza; write words with their normal spelling.\n",
+    }.get(language, "")
     prompt = f"""You are a {lang_name} language educator writing a graded reader.
 
 Write a coherent {lang_name} passage for CEFR {level} learners.
@@ -172,9 +334,16 @@ Topic: {shown_topic}
 GRAMMAR CONSTRAINTS FOR {level}:
 {rules["prompt_constraints"]}
 
-Prefer lemmas from this in-band sample (you may use other {level}-appropriate words too):
-{sample}
-{known_line}{reuse_line}{news_line}
+ALLOWED WORDS FOR {level} (dictionary forms; any inflected form is fine):
+{words}
+
+WORD CHOICE (this is checked automatically):
+- Every noun, verb, adjective, and adverb must come from the allowed words. Names of people and places, and numbers, are exempt.
+- If an idea needs a word that is not in the list, say it another way or leave it out.
+- Repeat allowed words rather than reaching for synonyms. Repetition helps learners.
+- Keep sentences short: one idea each, about {sentence}.
+- Use only the grammar listed above. If a sentence needs a forbidden form, split it or say it more simply.
+{spelling}{known_line}{reuse_line}{news_line}
 RULES:
 1. The title and "text" field are ONLY {lang_name}.
 2. The passage must be a complete, readable story or article with a beginning and end.
@@ -188,25 +357,7 @@ Respond ONLY with valid JSON:
   "translation": "English translation, one sentence per source sentence."
 }}
 {correction}"""
-
-    client = _client()
-    completion = client.chat.completions.create(
-        model=settings.llm_model,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.7 if not correction_flags else 0.4,
-        timeout=45.0,
-    )
-    record_usage(completion)
-    content = completion.choices[0].message.content or ""
-    data = _parse_json(content)
-    title = str(data.get("title") or "").strip()
-    text = str(data.get("text") or "").strip()
-    translation = str(data.get("translation") or "").strip() or None
-    if not text:
-        raise RuntimeError("LLM returned an empty passage")
-    if not title:
-        title = topic
-    return title, text, translation
+    return prompt
 
 
 def gloss_lemmas(lemmas: list[str], language: str = "ru") -> dict[str, str]:
@@ -225,15 +376,9 @@ def gloss_lemmas(lemmas: list[str], language: str = "ru") -> dict[str, str]:
         + json.dumps(unique, ensure_ascii=False)
     )
     try:
-        client = _client()
-        completion = client.chat.completions.create(
-            model=settings.llm_model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0,
-            timeout=30.0,
+        data = _parse_json(
+            _complete(prompt, temperature=0, timeout=30.0, json_mode=True)
         )
-        record_usage(completion)
-        data = _parse_json(completion.choices[0].message.content or "")
         out: dict[str, str] = {}
         for k, v in data.items():
             if isinstance(v, str) and v.strip():
@@ -265,15 +410,7 @@ Respond ONLY with the English sentences, separated by spaces (not a numbered lis
 
 {numbered}"""
     try:
-        client = _client()
-        completion = client.chat.completions.create(
-            model=settings.llm_model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.2,
-            timeout=45.0,
-        )
-        record_usage(completion)
-        out = (completion.choices[0].message.content or "").strip()
+        out = _complete(prompt, temperature=0.2, timeout=45.0).strip()
         if out.startswith("```"):
             out = out.strip("`").strip()
         return out or None

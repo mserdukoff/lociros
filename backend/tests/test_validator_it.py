@@ -83,3 +83,27 @@ def test_it_gloss_core_lemma():
     toks = it_tokens("Anna è studentessa.")
     essere = next(t for t in toks if t.lemma == "essere")
     assert essere.gloss == "to be"
+
+
+def test_it_verb_after_subject_is_not_imperative():
+    for text in ("Marco cammina veloce verso la stazione.", "Lui cammina nel parco."):
+        result = validate_tokens(it_tokens(text), "A1", "it")
+        assert not any(f.startswith("mood:impr") for f in result.flags), (text, result.flags)
+
+
+def test_it_real_imperative_is_still_flagged():
+    toks = it_tokens("Cammina piano!")
+    if any(t.morph and t.morph.mood == "impr" for t in toks):
+        result = validate_tokens(toks, "A1", "it")
+        assert any(f.startswith("mood:impr") for f in result.flags)
+
+
+def test_it_present_is_not_imperfetto_and_per_me_is_not_a_clitic():
+    result = validate_tokens(it_tokens("I bambini tornano a casa. Il regalo è per me."), "A1", "it")
+    assert not any(f.startswith(("it:imperfetto", "tense:impf", "it:clitic")) for f in result.flags), result.flags
+
+
+def test_it_real_imperfetto_and_clitic_still_flagged():
+    flags = validate_tokens(it_tokens("Marco tornava a casa. Anna lo guarda."), "A1", "it").flags
+    assert any(f.startswith(("it:imperfetto", "tense:impf")) for f in flags), flags
+    assert any(f.startswith("it:clitic") for f in flags), flags

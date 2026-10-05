@@ -37,7 +37,7 @@ Full product, architecture, design, API, NLP, and learner-model specs live in [`
 
 Asking a model to “write B1 Russian” or “write A1 Japanese” is not enough. Russian drifts into extra cases and participles. Japanese drifts into て-form, ている, relative clauses, and keigo. Italian drifts into congiuntivo, gerundio, and passato remoto. Arabic drifts into past tense, إنّ, derived verb Forms II–X, and the passive. Lociros treats CEFR as a **checkable constraint**:
 
-1. The prompt includes per-level grammar rules and an in-band lemma sample.
+1. The prompt includes per-level grammar rules and every allowed word for the level.
 2. The draft is tokenized with a real analyzer (Sudachi for Japanese, spaCy for Italian, pymorphy3 for Russian, CAMeL Tools for Arabic).
 3. A validator scores over-level lemmas and forbidden constructions.
 4. A failing draft is rewritten with those flags. The closer attempt is kept.
@@ -110,7 +110,7 @@ A Japanese catalog of 160 more authored texts (`catalog_ja.py`) is seeded alongs
 topic + CEFR + genre + language
         │
         ▼
-  LLM (OpenRouter)  ── grammar constraints + lemma sample
+  LLM (OpenRouter)  ── grammar constraints + allowed-word list
         │
         ▼
   Morphological analysis  ── tokens, lemmas, POS, readings
@@ -133,14 +133,14 @@ topic + CEFR + genre + language
 
 **Generation** (`backend/app/services/llm.py`, `generate.py`)
 
-- Model defaults to `openai/gpt-4o-mini` via OpenRouter. Override with `LLM_MODEL`.
+- Model defaults to `google/gemini-3.1-flash-lite` via OpenRouter, falling back to `openai/gpt-4o-mini`. Override with `LLM_MODEL` and `LLM_FALLBACK_MODELS`; compare models with `scripts/bench_generation.py`.
 - Prompt includes:
   - language-specific length (Russian: 400–700 words; Italian: 350–600 words; Arabic: 280–500 words; Japanese: 22–40 short sentences)
   - `prompt_constraints` from `data/grammar/{ru,ja,it,ar}_cefr.json`
-  - a random sample of ~48 lemmas at or below the target band
+  - every lemma at or below the target band, with rules to stay inside that list
   - genre hint, if any
-- Response must be JSON `{ "title", "text" }`.
-- If calibration fails, a second call is made at lower temperature with the validator flags. Severity is `flags + weighted rates`. The less-severe attempt is stored. If it still fails it is quarantined (`shelf_status=quarantine`) and hidden from the shelf, the reader, and Continue.
+- Response must be JSON `{ "title", "text", "translation" }`.
+- If calibration fails, a second call at lower temperature sends back the failed draft and asks for an edit that fixes the flagged words and grammar. Tune with `scripts/tune_prompts.py`. Severity is `flags + weighted rates`. The less-severe attempt is stored. If it still fails it is quarantined (`shelf_status=quarantine`) and hidden from the shelf, the reader, and Continue.
 - Generation runs as a background job: `POST /api/generate` returns 202 and the client polls the job.
 
 **Analysis**
@@ -639,7 +639,9 @@ Grammar JSON is edited by hand. After changing grammar or vocab, restart the bac
 | Variable | Default | Meaning |
 | -------- | ------- | ------- |
 | `OPENROUTER_API_KEY` | empty | Required for `/generate`, LLM gloss fill, and translation |
-| `LLM_MODEL` | `openai/gpt-4o-mini` | OpenRouter model id |
+| `LLM_MODEL` | `google/gemini-3.1-flash-lite` | OpenRouter model id |
+| `LLM_FALLBACK_MODELS` | `openai/gpt-4o-mini` | Models OpenRouter tries when the main one errors |
+| `LLM_PROVIDER_SORT` | `throughput` | OpenRouter provider order |
 | `DATABASE_URL` | SQLite at `backend/levla.db` | SQLAlchemy URL. Compose sets Postgres. `postgres://` is rewritten to `postgresql+psycopg2://`. Supabase hosts get `sslmode=require` |
 | `DB_SSLMODE` | empty | Set `require` for hosted Postgres; inferred for Supabase |
 | `CORS_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000` | Comma-separated. `PUBLIC_BASE_URL` is always added |
@@ -649,7 +651,7 @@ Grammar JSON is edited by hand. After changing grammar or vocab, restart the bac
 | `PUBLIC_BASE_URL` | `http://localhost:3000` | Public origin (OAuth, CORS, OpenRouter referer) |
 | `SUPABASE_URL` | empty | `https://PROJECT.supabase.co`. Inferred from a direct `db.*.supabase.co` host |
 | `SKIP_SEED` | `false` | Skip library/catalog seed on extra API/worker processes after first boot |
-| `GENERATE_WORKERS` | `2` | Background threads per process that run generation jobs. Set `0` on API tasks if a dedicated worker service handles generation |
+| `GENERATE_WORKERS` | `4` | Background threads per process that run generation jobs. Set `0` on API tasks if a dedicated worker service handles generation |
 | `GENERATE_MAX_PENDING` | `3` | Max queued/running jobs per device or signed-in user |
 | `SHOW_RUSSIAN` | `true` | Russian on the public shelf. Set `false` to hide it |
 | `SHOW_ITALIAN` | `true` | Italian on the public shelf. Set `false` to hide it |
@@ -717,5 +719,5 @@ Not in this repo: billed accounts, live TTS, or official CEFR/JLPT lists.
 | [docs/api.md](docs/api.md) | Endpoints, headers, payloads, status codes |
 | [docs/nlp-and-cefr.md](docs/nlp-and-cefr.md) | Generation, analyzers, validators, lexicons, kanji |
 | [docs/learner-model.md](docs/learner-model.md) | Device id, placement, new/known counts, next-text ranking |
-| [docs/deploy.md](docs/deploy.md) | Vercel frontend and admin, Supabase Postgres, FastAPI on Lightsail behind Caddy, Stripe, uptime, errors, backups |
+| [docs/deploy.md](docs/deploy.md) | Vercel frontend and admin, Supabase Postgres, FastAPI replicas on Lightsail behind nginx, Stripe, uptime, errors, backups |
 | [docs/launch.md](docs/launch.md) | Go-live checklist for taking live payments |

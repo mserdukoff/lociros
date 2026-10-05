@@ -45,10 +45,52 @@ FORM_FLAGS = {
 }
 
 
+# Perfect in form, present in meaning ("is not").
+NEGATIVE_COPULA = "ليس"
+# Passive in form, but the ordinary way to say "there is".
+EXISTENTIAL = {"يوجد", "توجد"}
+
+
 def _norm(lemma: str) -> str:
     from app.services.roots import normalize_lemma
 
     return normalize_lemma(lemma)
+
+
+def _rule_lemma(tok: Token) -> str:
+    """CAMeL lemmatizes لأن ("because") as أن; the rules treat it as its own conjunction."""
+    lemma = _norm(tok.lemma or (tok.morph.lemma if tok.morph else "") or "")
+    if lemma == "ان" and _norm(tok.text).startswith("ل"):
+        return "لان"
+    return lemma
+
+
+def _tense(tokens: list[Token], index: int, tok: Token) -> str:
+    m = tok.morph
+    if m is None:
+        return ""
+    if _norm(m.lemma or "") == NEGATIVE_COPULA:
+        return "pres"
+    # Unvowelled أحب after أنا is "I love" (present), not "he loved"; the past
+    # with أنا ends in ت (أحببت).
+    if m.tense == "past":
+        prev = _prev_word(tokens, index)
+        surface = _norm(tok.text)
+        if prev and _norm(prev.text) == "انا" and surface.startswith("ا") and not surface.endswith("ت"):
+            return "pres"
+    return m.tense or ""
+
+
+def _band(bands: dict[str, str], tok: Token, lemma: str) -> str | None:
+    """The list keys some adverbs by their written form (الآن، أيضاً، شكراً، جداً)
+    while CAMeL reduces them to a base (أن، أيض، شكر، جد). Use the easier match."""
+    candidates = [
+        bands.get(key)
+        for key in (lemma, tok.morph.lemma if tok.morph else None, _norm(tok.text))
+        if key
+    ]
+    found = [b for b in candidates if b]
+    return min(found, key=level_rank) if found else None
 
 
 def _prev_word(tokens: list[Token], index: int) -> Token | None:
@@ -82,10 +124,12 @@ def _pos(tok: Token) -> str:
 def _detect_constructions(tokens: list[Token], i: int, tok: Token) -> list[str]:
     hits: list[str] = []
     morph = tok.morph
-    lemma = _norm(tok.lemma or "")
-    tense = (morph.tense if morph else None) or ""
+    lemma = _rule_lemma(tok)
+    tense = _tense(tokens, i, tok)
     mood = (morph.mood if morph else None) or ""
     voice = (morph.voice if morph else None) or ""
+    if _norm(tok.text) in EXISTENTIAL:
+        voice = ""
     number = (morph.number if morph else None) or ""
     form = (morph.form if morph else None) or ""
     nxt = _next_word(tokens, i)
@@ -108,7 +152,8 @@ def _detect_constructions(tokens: list[Token], i: int, tok: Token) -> list[str]:
         hits.append(FORM_FLAGS[form])
         hits.append("derived_form")
 
-    if lemma in INNA_LEMMAS:
+    # الآن ("now") normalizes to the same lemma as أن.
+    if lemma in INNA_LEMMAS and _pos(tok) != "NOUN":
         hits.append("inna")
     if lemma in RELATIVE_LEMMAS:
         hits.append("relative")
@@ -151,16 +196,17 @@ def validate_tokens_ar(tokens: list[Token], level: str) -> ValidationResult:
         if not tok.is_word or not tok.morph:
             continue
         m = tok.morph
-        lemma = _norm(m.lemma)
+        lemma = _rule_lemma(tok)
+        tense = _tense(tokens, i, tok)
 
         for cons in _detect_constructions(tokens, i, tok):
             if cons in forbidden:
                 conj_hits += 1
                 flag(f"ar:{cons} ({tok.text})")
 
-        if m.tense and allowed_tenses and m.tense not in allowed_tenses:
+        if tense and allowed_tenses and tense not in allowed_tenses:
             tense_hits += 1
-            flag(f"tense:{m.tense} ({tok.text})")
+            flag(f"tense:{tense} ({tok.text})")
 
         if m.mood and allowed_moods and m.mood not in allowed_moods:
             tense_hits += 1
@@ -175,7 +221,7 @@ def validate_tokens_ar(tokens: list[Token], level: str) -> ValidationResult:
 
         if m.pos in CONTENT_POS:
             content_n += 1
-            band = bands.get(lemma) or bands.get(m.lemma)
+            band = _band(bands, tok, lemma)
             if band is None or level_rank(band) > cap:
                 if vocab_exempt(tok) or m.pos == "PROPN" or m.pos_detail == "proper-noun":
                     continue

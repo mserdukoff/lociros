@@ -8,18 +8,22 @@ Lociros is three pieces in production.
 | Postgres + Auth | [Supabase](https://supabase.com) | Catalog, learner state, generation jobs, sign-in |
 | FastAPI + worker threads | AWS Lightsail 4 GB instance | Sudachi / spaCy / CAMeL / pymorphy3 do not fit a Vercel function |
 
-Audio MP3s live on the Lightsail host in `/opt/lociros/audio`, mounted into the container by `scripts/lightsail-run.sh`, so they survive a redeploy. One API instance is enough.
+Audio MP3s live on the Lightsail host in `/opt/lociros/audio`, mounted into the containers by `scripts/lightsail-run.sh`, so they survive a redeploy.
 
 ```
 Browser
    │
    ▼
 Vercel  (Next.js)
-   ├─ /api/*   →  proxy to the public FastAPI origin
+   ├─ /api/*   →  proxy to https://api.lociros.com  (+ PROXY_SECRET, visitor IP)
    └─ SSR      →  NLP_BACKEND_URL
                     │
                     ▼
-FastAPI :8000  (Lightsail instance)
+Lightsail instance
+   nginx :443  (TLS, flood guard, least-conn load balancing)
+     ├─ lociros-api-1  127.0.0.1:8001   requests + generation threads + news scheduler
+     └─ lociros-api-2  127.0.0.1:8002   requests only
+   lociros-redis      (shared rate-limit windows and cooldowns)
                     │
                     └─ Supabase  (session pooler :5432)
 ```
@@ -97,7 +101,7 @@ You can also do everything below in the [Lightsail console](https://lightsail.aw
 2. Platform **Linux/Unix**, blueprint **OS only → Ubuntu 24.04**.
 3. Plan **$24, 4 GB RAM, 2 vCPUs** (IPv4).
 4. Name `lociros-api`. Create.
-5. Networking → IPv4 firewall: **SSH 22**, **HTTP 80**, **HTTPS 443**. Do not open 8000; Caddy proxies to it on localhost (step 2e). Attach a **static IP** so DNS survives a reboot.
+5. Networking → IPv4 firewall: **SSH 22**, **HTTP 80**, **HTTPS 443**. Do not open 8000–8009; nginx proxies to the replicas on localhost (step 2e). Attach a **static IP** so DNS survives a reboot.
 6. Copy the public IPv4.
 
 Lightsail is IPv4-only. In Supabase → **Connect**, copy the **Session pooler** URI (port **5432**, user `postgres.gsvkckwuiqajwfkynjrm`). Do not use the direct `db.*.supabase.co` host.
@@ -126,7 +130,7 @@ SUPABASE_URL=https://gsvkckwuiqajwfkynjrm.supabase.co
 OPENROUTER_API_KEY=sk-or-...
 PUBLIC_BASE_URL=http://localhost:3000
 CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
-GENERATE_WORKERS=2
+PROXY_SECRET=paste-another-long-random-string
 ADMIN_EMAILS=you@example.com
 REQUIRE_AUTH=true
 STRIPE_SECRET_KEY=sk_live_...
@@ -137,7 +141,7 @@ SUPABASE_SERVICE_ROLE_KEY=...
 SENTRY_DSN=https://...ingest.sentry.io/...
 ```
 
-Generate `JWT_SECRET` with `openssl rand -hex 32`. Percent-encode reserved characters in the database password. Keep `PUBLIC_BASE_URL` as localhost until the Vercel frontend exists.
+Generate `JWT_SECRET` and `PROXY_SECRET` with `openssl rand -hex 32` (two different values). `PROXY_SECRET` goes on the Vercel frontend project too (section 3): every request reaches the API from Vercel's shared addresses, and the secret is how the API and nginx know they can trust the visitor address Vercel passes along. Without it, rate limits treat all guests as one caller. Percent-encode reserved characters in the database password. Keep `PUBLIC_BASE_URL` as localhost until the Vercel frontend exists.
 
 `REQUIRE_AUTH` defaults to `true` when `APP_ENV=production`. It limits custom-passage generation to signed-in accounts. Without it, any browser can generate up to `GENERATE_MONTHLY_CAP` (default 10) passages a month per device id; device ids are client-chosen, so the per-IP rate limit is then the real ceiling. `ADMIN_EMAILS` empty means nobody can open admin routes.
 
@@ -145,44 +149,100 @@ With `APP_ENV=production` the API also turns off `/docs` and `/openapi.json`, re
 
 ### 2d. Build the image on this Mac, load it on Lightsail
 
-From the **repo root** (the image is large; first build takes a while):
+From the **repo root** (the image is about 3 GB; the first build takes a while):
 
 ```bash
-docker build -f backend/Dockerfile -t lociros-backend .
+docker build --platform linux/amd64 -f backend/Dockerfile -t lociros-backend .
 docker save lociros-backend | gzip | ssh ubuntu@PUBLIC_IP 'gzip -d | docker load'
 scp scripts/lightsail-run.sh ubuntu@PUBLIC_IP:
-ssh ubuntu@PUBLIC_IP 'chmod +x lightsail-run.sh && ./lightsail-run.sh'
+ssh ubuntu@PUBLIC_IP 'sh lightsail-run.sh'
 ```
 
-`lightsail-run.sh` creates `/opt/lociros/audio` (owned by uid 1000, the image's user) and mounts it as `AUDIO_DIR`. First start seeds the library and can take several minutes. Then:
+`lightsail-run.sh` starts a Redis container and `API_REPLICAS` (default 2) API containers on `127.0.0.1:8001`, `127.0.0.1:8002`, … on a private Docker network. It creates `/opt/lociros/audio` (owned by uid 1000, the image's user) and mounts it as `AUDIO_DIR`. Every replica runs `GENERATE_WORKERS` generation threads (default 4), so custom passages keep flowing while one replica restarts; a replica that stops hands its unfinished jobs back to the queue. Replica 1 also seeds the library on first start (several minutes) and runs the daily news scheduler; the others set `NEWS_SCHEDULER=false` and `SKIP_SEED=true`. Check from the box:
 
 ```bash
-curl -fsS "http://PUBLIC_IP:8000/health"
-curl -fsS "http://PUBLIC_IP:8000/api/health/ready"
-# ready includes "db": true
+curl -fsS http://127.0.0.1:8001/api/health/ready
+curl -fsS http://127.0.0.1:8002/api/health/ready
+# both include "db": true
 ```
 
-`lightsail-run.sh` publishes the container on `127.0.0.1:8000` only. Check it from the box with `curl -fsS http://127.0.0.1:8000/health`, then set up HTTPS (step 2e). To publish `:8000` publicly for a one-off test before DNS exists, run it with `PUBLISH=8000:8000` and open the port temporarily.
+Later deploys from the Mac: `API_HOST=ubuntu@PUBLIC_IP sh scripts/deploy-api.sh` builds, ships, runs migrations, and restarts the replicas one at a time. Before each replica is replaced, nginx is told to stop sending it new requests; it finishes what it has (up to 30 s), the new container must pass `/api/health/ready`, and only then is the next replica touched. Users see no errors during a deploy. If a new replica fails its health check the script stops, leaving the others on the old image.
 
-Later deploys from the Mac: `API_HOST=ubuntu@PUBLIC_IP sh scripts/deploy-api.sh` builds, ships, restarts, and health-checks in one go.
-
-One API process with `WEB_CONCURRENCY=1` and `GENERATE_WORKERS=2` is enough. Do not run a second worker container on this box. Keep it at one process: rate limits and the translation cooldown live in process memory, and every extra uvicorn worker starts its own generation threads.
-
-### 2e. HTTPS with Caddy
+### 2e. HTTPS and load balancing with nginx
 
 1. Create an `A` record `api.lociros.com` → the instance's static IP.
-2. Copy `infra/` to the box and run the setup script:
+2. Make sure `PROXY_SECRET` is in `/opt/lociros/.env` (step 2c).
+3. Copy `infra/` to the box and run the setup script:
 
 ```bash
 scp -r infra ubuntu@PUBLIC_IP:
-ssh ubuntu@PUBLIC_IP 'sudo sh infra/caddy-setup.sh api.lociros.com'
+ssh ubuntu@PUBLIC_IP 'sudo sh infra/nginx-setup.sh api.lociros.com you@example.com'
 curl -fsS https://api.lociros.com/health
 ```
 
-Caddy gets and renews the certificate, adds HSTS, and proxies to `127.0.0.1:8000`. Uvicorn only trusts `X-Forwarded-*` from the host and Docker bridges (`FORWARDED_ALLOW_IPS`, default `127.0.0.1,172.16.0.0/12`).
+The script adds 2 GB of swap, installs nginx and certbot, gets the certificate (renewed by certbot's timer), and installs `infra/nginx/lociros.conf`. If Caddy from an earlier setup is running, it is stopped and disabled. Re-run it whenever `PROXY_SECRET` changes. nginx:
 
-3. Set `NLP_BACKEND_URL=https://api.lociros.com` on both Vercel projects and redeploy them.
-4. In the Lightsail firewall, make sure 8000 is closed.
+- balances requests across the replicas with `least_conn` and keeps connections to them open;
+- retries a request on another replica when one is down or restarting (writes are only retried if they never reached the replica);
+- caps bodies at 1 MB, allows 120 s for slow translation calls, and gzips JSON;
+- limits each visitor to 30 requests per second (burst 60) and 40 open connections. The visitor is the address Vercel vouches for with `PROXY_SECRET`, so limits apply per person, not per Vercel address. Stripe webhooks are exempt.
+
+Uvicorn only trusts `X-Forwarded-*` from the host and Docker bridges (`FORWARDED_ALLOW_IPS`, default `127.0.0.1,172.16.0.0/12`). The per-route limits in the API (for example 6 custom passages a minute) are kept in Redis, so they hold across replicas.
+
+4. Set `NLP_BACKEND_URL=https://api.lociros.com` on both Vercel projects and `PROXY_SECRET` on the frontend project, then redeploy them.
+5. In the Lightsail firewall, make sure only 22, 80, and 443 are open.
+
+### 2f. Capacity
+
+The $24 plan's CPU is burstable: 2 vCPUs, but only 20% of each is sustained all day. Above that it spends burst capacity, which refills while traffic is low (a full bank is roughly six hours of both cores flat out). So the box has two numbers: what it sustains, and what it can absorb at peak.
+
+Measured October 2026 with `infra/loadtest/compose.yml` plus `infra/loadtest/lightsail.yml` (same nginx config, two replicas capped at Lightsail's CPU, 1.8 GB each, Postgres capped at one core), using `scripts/loadtest.py --scenario session`: each simulated reader loads the shelf, opens a passage, taps 12 words, and rates it, the way the app does. The test machine's cores are faster than Lightsail's, so the figures below are already discounted by a third.
+
+| | Requests a second | Passages read a minute | Readers at once (one passage per 4 min, 18 requests) |
+| --- | --- | --- | --- |
+| Sustained (baseline CPU) | about 50 | about 175 | about 650 |
+| Burst (both cores) | about 300 | about 1,100 | about 4,000 |
+
+p95 latency stayed under 0.5 s at both levels, with no errors. Killing a replica mid-test produced no failed requests.
+
+In daily users: with 20 minutes of reading per person a day and the busiest hour carrying about 12% of the day, 10,000 daily readers average about 140 at once and peak around 400. The averaged load must stay under the sustained figure and the peak under the burst figure, which puts the ceiling at roughly 30,000–40,000 daily readers; treat 15,000–20,000 as comfortable. Check the Lightsail **CPU burst capacity** graph weekly: a bank that trends toward zero means sustained load is above the baseline.
+
+Custom passages are a separate limit, set by how long OpenRouter takes and how many generation threads wait on it. Each passage is a draft (with its translation), a gloss call, and in about half of cases a corrective edit plus a second gloss call. The figures below were measured before the October 2026 prompt tuning; with the tuned prompt Gemini 3.1 Flash Lite averaged 4.2 s per passage. Measured October 2026 with `scripts/bench_generation.py` (16 passages per model across all four languages, eight at once):
+
+| `LLM_MODEL` | Per passage (mean / worst) | Draft speed | Passed level | Output cost per 1,000 passages |
+| --- | --- | --- | --- | --- |
+| `google/gemini-3.1-flash-lite` (default) | 6.6 s / 9.5 s | about 240 tokens/s | 7 of 16 | about $2.40 |
+| `google/gemini-3.5-flash-lite` | 8.4 s / 12 s | about 210 tokens/s | 4 of 16 | about $4.80 |
+| `openai/gpt-5.4-nano` | 16 s / 28 s | about 145 tokens/s | 5 of 16 | about $2.60 |
+| `openai/gpt-4o-mini` (previous default) | 20 s / 42 s | about 100 tokens/s | 6 of 16 | about $1.00 |
+
+Two replicas × 4 threads is 8 passages in flight, which at about 7 s each is roughly 60–70 passages a minute (about 4,000 an hour). With the monthly cap of 10 per account that is far above what 20,000 daily readers ask for. Above that the queue grows and the CPU becomes the next limit: each passage spends well under a second in the analyzers, but those run in the same process as requests. If the queue backs up while CPU has headroom, raise `GENERATE_WORKERS` to 6–8.
+
+What keeps generation fast:
+
+- **Provider routing.** Every call asks OpenRouter for its highest-throughput provider (`LLM_PROVIDER_SORT=throughput`), which alone cut `gpt-4o-mini` drafts from 9.2 s to 6.9 s.
+- **Fallback models.** If the main model errors or is overloaded, OpenRouter retries the same request on `LLM_FALLBACK_MODELS` instead of failing the job.
+- **A hard time limit per call.** OpenRouter keeps a busy request open with keep-alive bytes, so the client's own timeout never fires. Each call streams and is cut off at its deadline (60 s for a draft, 30–45 s otherwise), so a stuck provider cannot hold a thread.
+- **No database connection while waiting.** The worker releases its pooled connection during LLM calls, so thread count is not tied to `DB_POOL_SIZE`.
+- **Credits.** Turn on auto top-up in OpenRouter. When the balance hits zero every generation fails at once.
+
+Avoid thinking models (Qwen 3.8 Flash timed out on every draft) unless you also set `LLM_REASONING_EFFORT=low` and re-run the benchmark. To compare models before switching:
+
+```bash
+cd backend && .venv/bin/python ../scripts/bench_generation.py --models google/gemini-3.1-flash-lite,openai/gpt-4o-mini --per 2
+```
+
+It uses a throwaway SQLite file, never the database in `.env`, and costs well under a dollar.
+
+Run the same test against production after launch for the real figure:
+
+```bash
+backend/.venv/bin/python scripts/loadtest.py --scenario session --url https://api.lociros.com --users 20 --duration 60 --think 0 --proxy-secret "$PROXY_SECRET"
+```
+
+Memory is the other limit. Each replica preloads the public languages' analyzers at startup (`PRELOAD_ANALYZERS`, on in production) and stays at about 1.5 GB with all four; CAMeL for Arabic is 1 GB of that. Two replicas use about 3 GB of the 4 GB, with the swap file as a cushion. Do not raise `API_REPLICAS` on the 4 GB plan. Setting `SHOW_ARABIC=false` frees about 1 GB per replica. Watch `docker stats` and the CPU graph in Lightsail. If both replicas sit near 100% CPU for long stretches, the box is outgrown: the next Lightsail plan with more cores (16 GB, 4 vCPUs) takes `API_REPLICAS=4` with no other change.
+
+Each replica keeps up to `DB_POOL_SIZE + DB_MAX_OVERFLOW` Postgres connections. Supabase's session pooler allows 15 on this project's compute, so `lightsail-run.sh` sets 4 + 3 per replica (14 in total) unless the env file says otherwise. If you add replicas or raise those numbers, raise **Pool Size** under Database → Settings → Connection pooling first (the database allows 60).
 
 ---
 
@@ -191,7 +251,7 @@ Caddy gets and renews the certificate, adds HSTS, and proxies to `127.0.0.1:8000
 1. Import the GitHub repo in [Vercel](https://vercel.com/new).
 2. Set **Root Directory** to `frontend`.
 3. Do **not** set `NEXT_PUBLIC_DEMO`.
-4. Add `NLP_BACKEND_URL` = the public FastAPI origin from step 2.
+4. Add `NLP_BACKEND_URL` = the public FastAPI origin from step 2 (`https://api.lociros.com`) and `PROXY_SECRET` = the same value as on the box.
 5. Add `NEXT_PUBLIC_SUPABASE_URL` = `https://gsvkckwuiqajwfkynjrm.supabase.co`
 6. Add `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` from Dashboard → **API Keys** (publishable, not secret).
 7. Add `NEXT_PUBLIC_SITE_URL` = `https://lociros.com` (canonical URLs, sitemap, Open Graph).
@@ -243,11 +303,16 @@ Google sign-in (later): enable the Google provider in Supabase Auth. On Google C
 | `JWT_SECRET` | Long random string |
 | `DATABASE_URL` | Supabase URI from step 1 |
 | `DB_SSLMODE` | `require` (inferred for Supabase hosts) |
-| `DB_POOL_SIZE` / `DB_MAX_OVERFLOW` | Defaults `5` / `10`; `5` / `5` is a conservative override |
+| `DB_POOL_SIZE` / `DB_MAX_OVERFLOW` | `lightsail-run.sh` sets `4` / `3` per replica unless set here; keep replicas × (both) under the Supabase pooler's pool size (section 2f) |
+| `PRELOAD_ANALYZERS` | Defaults to `true` in production: load each public language's analyzer before the replica reports healthy |
+| `PROXY_SECRET` | Long random string, same value on the Vercel projects. Lets the API and nginx rate limit per visitor |
+| `REDIS_URL` | Set by `lightsail-run.sh` to the `lociros-redis` container. Shared rate-limit windows and translation cooldown; without it each process keeps its own |
 | `PUBLIC_BASE_URL` | Frontend origin |
 | `CORS_ORIGINS` | Same frontend origin |
 | `CORS_ORIGIN_REGEX` | Optional, `https://.*\.vercel\.app` for preview URLs |
 | `OPENROUTER_API_KEY` | Generation, LLM gloss, translation |
+| `LLM_MODEL` / `LLM_FALLBACK_MODELS` | Default `google/gemini-3.1-flash-lite`, falling back to `openai/gpt-4o-mini`. See 2f before changing |
+| `LLM_PROVIDER_SORT` | `throughput` (default): OpenRouter picks the fastest provider for the model |
 | `ADMIN_EMAILS` | Comma-separated emails the admin API accepts (include the admin app's `ADMIN_EMAIL`). Empty locks admin routes |
 | `REQUIRE_AUTH` | Defaults to `true` in production: only signed-in accounts can generate |
 | `PAYWALL_ENABLED` | Defaults to `true` in production. `false` turns the paywall off everywhere |
@@ -259,13 +324,13 @@ Google sign-in (later): enable the Google provider in Supabase Auth. On Google C
 | `SUPABASE_SERVICE_ROLE_KEY` | Lets account deletion remove the Supabase login. Server-only |
 | `CONTACT_EMAIL` | Support address (default `hello@lociros.com`) |
 | `SENTRY_DSN` / `SENTRY_TRACES_SAMPLE_RATE` | Error reporting; traces default `0` |
-| `NEWS_SCHEDULER` | `true` (default): build daily news hourly in the background |
+| `NEWS_SCHEDULER` | `true` (default): build daily news hourly in the background. `lightsail-run.sh` turns it on for replica 1 only |
 | `MAX_BODY_BYTES` | Request body cap, default `262144` |
 | `GENERATE_MONTHLY_CAP` | Custom passages per account or device per month (default `10`) |
-| `GENERATE_WORKERS` | `2` |
+| `GENERATE_WORKERS` | Generation threads per replica, default `4` on every replica (set by `lightsail-run.sh`) |
 | `AZURE_SPEECH_KEY` / `AZURE_SPEECH_REGION` | Only needed where `scripts/batch_catalog.py` makes audio |
 | `SUPABASE_URL` | `https://PROJECT.supabase.co` — inferred from a direct `db.*.supabase.co` URI |
-| `SKIP_SEED` | `true` on extra API/worker processes after the first seed |
+| `SKIP_SEED` | `true` on every replica but the first (set by `lightsail-run.sh`) |
 
 Do not set `COOKIE_DOMAIN`. The Vercel proxy sets cookies on the frontend host.
 
@@ -351,8 +416,12 @@ On Vercel, set `NEXT_PUBLIC_DEMO=1` at **build** time and omit `NLP_BACKEND_URL`
 | `/api/*` returns 502 `Backend unavailable` | `NLP_BACKEND_URL` missing or FastAPI is down |
 | `Tenant or user not found` | Pooler username must be `postgres.PROJECT_REF` |
 | Connection timeout | Direct `db.*.supabase.co` on an IPv4-only host; use the session pooler |
-| Restock gives up with "taking too long" | No worker threads (`GENERATE_WORKERS=0`) and no worker process, or the LLM is hanging. The client stops polling after three minutes; the API marks a job stuck in `running` for 10 minutes as failed |
+| Restock gives up with "taking too long" | Replica 1 (the only one with generation threads) is down, or the LLM is hanging. Pending jobs wait for it; nothing is lost. The client stops polling after three minutes; the API marks a job stuck in `running` for 10 minutes as failed |
 | Restock returns 429 | Monthly cap, pending-job limit, or the per-minute rate limit |
+| Many unrelated users get 429 at once | `PROXY_SECRET` missing or different on Vercel and the box (or nginx not re-run after changing it), so everyone counts as Vercel's few addresses |
+| 502 from nginx | Every replica is down: `docker ps`, `docker logs lociros-api-1`. `/var/log/nginx/lociros.error.log` shows which upstream failed |
+| A replica restarts on its own | Out of memory: `docker inspect -f '{{.State.OOMKilled}}' lociros-api-2`, `free -m`. Check the swap file exists |
+| `max clients reached` / `too many connections` | Replicas × `DB_POOL_SIZE + DB_MAX_OVERFLOW` exceeds the Supabase pooler's pool size (section 2f) |
 | Admin dashboard says "Not configured" | `ADMIN_EMAIL` or the Supabase variables are missing on the admin project |
 | A new column or index is missing in production | A migration was not applied; run `alembic upgrade head` |
 | Checkout returns 503 "Billing is not set up" | `STRIPE_SECRET_KEY` or `STRIPE_PRICE_MONTHLY` missing on the API |

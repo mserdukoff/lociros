@@ -1,7 +1,8 @@
 #!/bin/sh
-# Build the API image here, ship it to Lightsail, run migrations, restart, health-check.
+# Build the API image here, ship it to Lightsail, run migrations, rolling restart, health-check.
 # Usage: API_HOST=ubuntu@1.2.3.4 sh scripts/deploy-api.sh
 # Optional: SSH_KEY=~/.ssh/lightsail.pem  PLATFORM=linux/amd64  PUBLIC_URL=https://api.lociros.com
+#           API_REPLICAS=2
 set -eu
 
 : "${API_HOST:?Set API_HOST=ubuntu@PUBLIC_IP}"
@@ -33,8 +34,8 @@ echo "Running migrations..."
 ssh_box "docker run --rm --env-file /opt/lociros/.env -e APP_ENV=production \
   --entrypoint sh $IMAGE -c 'cd /app/backend && alembic upgrade head'"
 
-echo "Restarting..."
-ssh_box "IMAGE=$IMAGE sh lightsail-run.sh"
+echo "Rolling restart (${API_REPLICAS:-2} replicas)..."
+ssh_box "IMAGE=$IMAGE API_REPLICAS=${API_REPLICAS:-2} sh lightsail-run.sh && docker image prune -f >/dev/null"
 
 if [ -n "${PUBLIC_URL:-}" ]; then
   echo "Checking $PUBLIC_URL..."

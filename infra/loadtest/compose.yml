@@ -1,0 +1,73 @@
+# Production topology on one machine, for load and failover testing:
+# nginx (same lociros.conf as the box) -> 2 API replicas -> Postgres, with Redis.
+#
+#   docker build -f backend/Dockerfile -t lociros-backend:loadtest .
+#   docker compose -f infra/loadtest/compose.yml up -d
+#   backend/.venv/bin/python scripts/loadtest.py --url http://127.0.0.1:8088 --proxy-secret loadtest-secret-0123456789
+#   docker compose -f infra/loadtest/compose.yml down -v
+x-api: &api
+  image: lociros-backend:loadtest
+  environment: &api-env
+    APP_ENV: development
+    DATABASE_URL: postgresql://lociros:lociros@postgres:5432/lociros
+    REDIS_URL: redis://redis:6379/0
+    PROXY_SECRET: loadtest-secret-0123456789
+    WEB_CONCURRENCY: "1"
+    DB_POOL_SIZE: "5"
+    DB_MAX_OVERFLOW: "5"
+    PAYWALL_ENABLED: "false"
+    REQUIRE_AUTH: "false"
+    PRELOAD_ANALYZERS: "true"
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_started
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: lociros
+      POSTGRES_PASSWORD: lociros
+      POSTGRES_DB: lociros
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lociros -d lociros"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "64mb", "--maxmemory-policy", "allkeys-lru"]
+
+  api-1:
+    <<: *api
+    environment:
+      <<: *api-env
+      GENERATE_WORKERS: "2"
+      NEWS_SCHEDULER: "true"
+      SKIP_SEED: "false"
+
+  api-2:
+    <<: *api
+    environment:
+      <<: *api-env
+      GENERATE_WORKERS: "0"
+      NEWS_SCHEDULER: "false"
+      SKIP_SEED: "true"
+    depends_on:
+      api-1:
+        condition: service_healthy
+
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "127.0.0.1:8088:80"
+    volumes:
+      - ../nginx/lociros.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./upstream.conf:/etc/nginx/lociros/upstream.conf:ro
+      - ./client-key.conf:/etc/nginx/lociros/client-key.conf:ro
+    depends_on:
+      api-2:
+        condition: service_healthy

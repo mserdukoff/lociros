@@ -53,6 +53,12 @@ def validate_production() -> None:
         )
     if not settings.require_auth:
         logger.warning("REQUIRE_AUTH is off in production. Guests can queue custom passages.")
+    if not settings.proxy_secret:
+        logger.warning(
+            "PROXY_SECRET is not set. Requests arrive from Vercel's shared addresses, so guest rate limits pool across users."
+        )
+    if not settings.redis_url:
+        logger.warning("REDIS_URL is not set. Rate limits are per process, not shared across replicas.")
 
 
 def configure_sentry() -> None:
@@ -74,18 +80,47 @@ def configure_sentry() -> None:
 configure_sentry()
 
 
+def preload_analyzers() -> None:
+    """Load each public language's analyzer before the replica reports healthy.
+
+    Otherwise the first readers after a deploy wait while a model loads (up to
+    20 s for Arabic), and nginx sends traffic to a replica that is not warm.
+    """
+    import time
+
+    from app.services import morph, morph_ja
+
+    loaders = [("ja", morph_ja.sudachi)]
+    if settings.show_russian:
+        loaders.append(("ru", morph.morph_analyzer))
+    if settings.show_italian:
+        from app.services import morph_it
+
+        loaders.append(("it", morph_it.italian_nlp))
+    if settings.show_arabic:
+        from app.services import morph_ar
+
+        loaders.append(("ar", morph_ar._camel))
+    for language, load in loaders:
+        started = time.monotonic()
+        load()
+        logger.info("Loaded %s analyzer in %.1fs", language, time.monotonic() - started)
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     configure_logging()
     validate_production()
     init_db()
+    if settings.preload_analyzers:
+        preload_analyzers()
     start_workers()
     if settings.news_scheduler:
         from app.services.news import start_news_scheduler
 
         start_news_scheduler()
     logger.info(
-        "Lociros backend ready env=%s db=%s workers=%s",
+        "Lociros backend ready env=%s db=%s workers=%s news=%s redis=%s",
         settings.app_env,
         (
             "sqlite"
@@ -95,6 +130,8 @@ async def lifespan(_app: FastAPI):
             else "postgres"
         ),
         settings.generate_workers,
+        settings.news_scheduler,
+        bool(settings.redis_url),
     )
     yield
     stop_workers()
