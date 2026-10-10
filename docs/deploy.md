@@ -184,7 +184,7 @@ The script adds 2 GB of swap, installs nginx and certbot, gets the certificate (
 
 - balances requests across the replicas with `least_conn` and keeps connections to them open;
 - retries a request on another replica when one is down or restarting (writes are only retried if they never reached the replica);
-- caps bodies at 1 MB, allows 120 s for slow translation calls, and gzips JSON;
+- caps bodies at 1 MB, and allows 120 s for slow translation calls (no gzip: Vercel compresses for browsers);
 - limits each visitor to 30 requests per second (burst 60) and 40 open connections. The visitor is the address Vercel vouches for with `PROXY_SECRET`, so limits apply per person, not per Vercel address. Stripe webhooks are exempt.
 
 Uvicorn only trusts `X-Forwarded-*` from the host and Docker bridges (`FORWARDED_ALLOW_IPS`, default `127.0.0.1,172.16.0.0/12`). The per-route limits in the API (for example 6 custom passages a minute) are kept in Redis, so they hold across replicas.

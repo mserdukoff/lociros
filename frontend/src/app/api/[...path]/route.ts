@@ -60,7 +60,9 @@ async function proxy(req: NextRequest, path: string[]) {
   const outHeaders = new Headers();
   upstream.headers.forEach((value, key) => {
     const lower = key.toLowerCase();
-    if (HOP.has(lower) || lower === "set-cookie") return;
+    // fetch has already decoded the body; passing content-encoding on makes
+    // the browser decode it again and fail ("Failed to fetch").
+    if (HOP.has(lower) || lower === "set-cookie" || lower === "content-encoding") return;
     outHeaders.append(key, value);
   });
 
