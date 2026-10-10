@@ -15,6 +15,7 @@ import type {
   GenerateJobResponse,
   PlacementRead,
   PlacementResult,
+  PlacementStage,
 } from "./types";
 
 export type PaywallCode = "signup_required" | "subscription_required";
@@ -293,20 +294,36 @@ export async function submitReview(cardId: number, rating: "again" | "hard" | "g
   return res.json();
 }
 
-export async function fetchPlacement(language: LangCode): Promise<PlacementRead> {
+export async function fetchPlacement(language: LangCode, level: CefrLevel = "A1"): Promise<PlacementRead> {
   if (isDemo()) return demoApi.fetchPlacement(language);
-  const res = await fetch(`/api/placement?language=${language}`, opts({ cache: "no-store" }));
+  const res = await fetch(`/api/placement?language=${language}&level=${level}`, opts({ cache: "no-store" }));
   if (!res.ok) {
     throw new Error(await readError(res));
   }
   return res.json();
 }
 
-export async function submitPlacement(language: LangCode, answers: number[]): Promise<PlacementResult> {
-  if (isDemo()) return demoApi.submitPlacement(language, answers);
+export async function submitPlacement(
+  language: LangCode,
+  start: CefrLevel,
+  stages: PlacementStage[],
+): Promise<PlacementResult> {
+  if (isDemo()) return demoApi.submitPlacement(language, stages);
   const res = await fetch("/api/placement", opts({
     method: "POST",
-    body: JSON.stringify({ language, answers }),
+    body: JSON.stringify({ language, start, stages }),
+  }, true));
+  if (!res.ok) {
+    throw new Error(await readError(res));
+  }
+  return res.json();
+}
+
+export async function keepLevel(language: LangCode): Promise<{ ok: boolean }> {
+  if (isDemo()) return demoApi.keepLevel(language);
+  const res = await fetch("/api/placement/keep", opts({
+    method: "POST",
+    body: JSON.stringify({ language }),
   }, true));
   if (!res.ok) {
     throw new Error(await readError(res));

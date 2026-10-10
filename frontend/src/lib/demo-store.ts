@@ -1,5 +1,5 @@
 import { getDemoPassage, listDemoPassages } from "./demo-catalog";
-import { bandForScore, PLACEMENT } from "./placement";
+import { demoBandForScore, PLACEMENT } from "./placement";
 import { isContentWord, type CefrLevel, type FeedbackRating, type LangCode, type LibraryItem, type LibraryResponse, type Passage, type PassageStats, type ReviewCard, type StarredWord, type Token } from "./types";
 
 const KEY = "lociros.demo.v1";
@@ -348,8 +348,8 @@ export function demoRecordTap(language: LangCode, lemma: string): void {
 export function demoSubmitPlacement(language: LangCode, answers: number[]) {
   const spec = PLACEMENT[language];
   const correct = answers.filter((answer, index) => answer === spec.answers[index]).length;
-  const level = bandForScore(correct, spec.answers.length);
-  return { ...placeAt(language, level), correct, total: spec.answers.length };
+  const level = demoBandForScore(correct);
+  return { ...placeAt(language, level), correct, total: spec.answers.length, done: true, next_level: null };
 }
 
 export function demoChoosePlacement(language: LangCode, level: CefrLevel) {

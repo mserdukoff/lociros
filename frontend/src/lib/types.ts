@@ -161,19 +161,24 @@ export type PlacementQuestion = {
 
 export type PlacementRead = {
   language: LangCode;
+  level: CefrLevel;
   title: string;
   text: string;
-  tokens: Token[];
   questions: PlacementQuestion[];
 };
 
+export type PlacementStage = { level: CefrLevel; answers: number[] };
+
+/** `done` false means read `next_level` and submit again with every stage so far. */
 export type PlacementResult = {
   language: LangCode;
-  level: CefrLevel;
+  level: CefrLevel | null;
   correct: number;
   total: number;
   placed: boolean;
   next_id?: string | null;
+  done?: boolean;
+  next_level?: CefrLevel | null;
 };
 
 export type LibraryResponse = {
@@ -185,6 +190,8 @@ export type LibraryResponse = {
   items: LibraryItem[];
   words?: StarredWord[];
   news_notice?: NewsNotice | null;
+  /** Set after a long break: offer a placement starting at this band. */
+  recheck_from?: CefrLevel | null;
 };
 
 export type StarredWord = {

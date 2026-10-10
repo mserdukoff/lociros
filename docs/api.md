@@ -46,8 +46,9 @@ CORS: `CORS_ORIGINS` (default localhost:3000). `PUBLIC_BASE_URL` is always inclu
 | `POST` | `/events` | `{ kind, passage_id?, payload? }` + `X-Device-Id` | `{ "ok": true }`. Browser-side funnel events: `landing_view`, `demo_tap`, `start_click`, `placement_start`, `session_start`, `paywall_view`. **400** for the kinds the API records itself (`placement_done`, `read_complete`, `account_linked`, `comprehension`, `trial_start`, `checkout_start`, `subscribed`, `churned`). `payload` is capped at 2 KB of JSON. Rate limited |
 | `GET` | `/admin/overview` | Bearer (admin) | `AdminOverview`: API status, totals, last 7 days, funnel, revenue (`trial.billing`), top model usage (`llm_usage`), counts, recent users with their plan, and recent jobs. Read by the admin app at `admin.lociros.com` |
 | `GET` | `/trial/metrics?days=30` | Bearer (admin) | Trial gates plus `funnel`: per-step devices and rates against landing views, 2- and 7-day returns, and `sticky_test` arms |
-| `GET` | `/placement?language=ja\|ru\|it\|ar` | | Placement passage and questions, without the answer key |
-| `POST` | `/placement` | `{ language, answers }` + identity | `{ language, level, correct, total, placed, next_id }`. `next_id` is the passage the result screen opens |
+| `GET` | `/placement?language=ja\|ru\|it\|ar&level=A1\|A2\|B1\|B2` | | `{ language, level, title, text, questions }`: one rung of the placement ladder (default `A1`) as plain text (no tokens, glosses, or grammar) and its four questions, without the answer key |
+| `POST` | `/placement` | `{ language, start, stages: [{ level, answers }] }` + identity | Send every stage read so far. A pass is 3 of 4. A first placement starts at `A1` and climbs until a miss. A recheck starts at the old band, climbs on a pass, and descends on a miss until a pass. Until it settles: `{ done: false, next_level, placed: false, level: null }`, and nothing is saved. Then `{ language, level, correct, total, placed, next_id, done: true }`, where `next_id` is the passage the result screen opens. **400** if the stages skip or reorder rungs. The old `{ language, answers }` body scores the A1 passage alone and caps at `A2` |
+| `POST` | `/placement/keep` | `{ language }` + identity | `{ ok, level }`. Keeps the current band after a long break and clears `recheck_from`. 404 before any placement |
 | `POST` | `/placement/choose` | `{ language, level }` + identity | Skips the read: the reader names their band (`A1`–`B2`) in onboarding. Same response with `correct` and `total` at `0`. 400 without an identity |
 | `POST` | `/news/save` | `{ passage_id, language, saved }` + identity | `{ ok, saved }`. Saves or unsaves today's news passage |
 | `POST` | `/taps` | `{ lemma, language, passage_id? }` + `X-Device-Id` | `{ "ok": true }` (ignored without an identity) |
@@ -306,7 +307,7 @@ A generated draft that still fails after its rewrite is stored with `shelf_statu
 }
 ```
 
-`news_notice` is today's news passage for this band, when one passed its check: `{ passage_id, title, language, level, source_name, source_date, saved, read }`. `placed` is false until the placement read (or a finished passage) sets the band.
+`news_notice` is today's news passage for this band, when one passed its check: `{ passage_id, title, language, level, source_name, source_date, saved, read }`. `placed` is false until the placement read (or a finished passage) sets the band. `recheck_from` is the current band when the reader has been away for 30 days or more in this language (no reads, taps, or band changes). The shelf offers a placement from that band, or `POST /placement/keep`. Otherwise it is null.
 
 `new_lemmas` / `recycled_lemmas` are **token occurrence counts** of content words, not unique lemmas. Sort on the backend: recommended first, then unread, then level, then newest.
 

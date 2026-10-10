@@ -7,20 +7,9 @@ export type PlacementSpec = {
   answers: number[];
 };
 
-const LEVELS = ["A1", "A2", "B1", "B2"] as const;
-
-export function bandForScore(correct: number, total = 4): (typeof LEVELS)[number] {
-  if (total === 4) {
-    if (correct <= 1) return "A1";
-    if (correct === 2) return "A2";
-    if (correct === 3) return "B1";
-    return "B2";
-  }
-  const ratio = total > 0 ? correct / total : 0;
-  if (ratio <= 0.25) return "A1";
-  if (ratio <= 0.5) return "A2";
-  if (ratio <= 0.75) return "B1";
-  return "B2";
+/** Demo has the A1 passage only, so a pass can show A2 at most. */
+export function demoBandForScore(correct: number): "A1" | "A2" {
+  return correct >= 3 ? "A2" : "A1";
 }
 
 function word(text: string, gloss: string, language: LangCode, pos = "NOUN"): Token {

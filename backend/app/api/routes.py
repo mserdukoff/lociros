@@ -22,6 +22,7 @@ from app.models.schemas import (
     PlacementRead,
     PlacementResult,
     PlacementChoose,
+    PlacementKeep,
     PlacementSubmit,
     AdminOverview,
     MeResponse,
@@ -65,6 +66,7 @@ from app.services.learner import (
     DEFAULT_LEVEL,
     get_learner,
     get_or_create_learner,
+    keep_level,
     lemma_token_stats,
     list_stars,
     pick_next_id,
@@ -702,11 +704,14 @@ def post_review(
 
 
 @router.get("/placement", response_model=PlacementRead)
-def get_placement(language: str = "ja"):
+def get_placement(language: str = "ja", level: str = "A1"):
     require_language(language)
     from app.services.placement import placement_read
 
-    return placement_read(language)
+    try:
+        return placement_read(language, level)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/placement", response_model=PlacementResult)
@@ -718,19 +723,43 @@ def post_placement(
     require_language(body.language)
     if not identity.can_persist:
         raise HTTPException(status_code=400, detail="A device id is required to save a level.")
-    from app.services.placement import score_placement
+    from app.services.placement import next_step, score_legacy
 
     try:
-        correct, total, level = score_placement(body.language, body.answers)
+        if body.stages:
+            step = next_step(
+                body.language, body.start, [(s.level, s.answers) for s in body.stages]
+            )
+        elif body.answers is not None:
+            step = score_legacy(body.language, body.answers)
+        else:
+            raise ValueError("Answer every question.")
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not step.done:
+        return PlacementResult(
+            language=body.language,
+            level=None,
+            correct=step.correct,
+            total=step.total,
+            placed=False,
+            done=False,
+            next_level=step.next_level,  # type: ignore[arg-type]
+        )
+    level = step.level or "A1"
+    correct, total = step.correct, step.total
     learner = get_or_create_learner(db, identity, body.language)
     set_placed_level(learner, level)
     record_event(
         db,
         kind="placement_done",
         identity=identity,
-        payload={"language": body.language, "level": level},
+        payload={
+            "language": body.language,
+            "level": level,
+            "start": body.start,
+            "passages": len(body.stages) or 1,
+        },
         commit=False,
     )
     db.commit()
@@ -785,6 +814,24 @@ def post_placement_choose(
         placed=True,
         next_id=next_id,
     )
+
+
+@router.post("/placement/keep")
+def post_placement_keep(
+    body: PlacementKeep,
+    db: Session = Depends(get_db),
+    identity: Identity = Depends(get_identity),
+):
+    """Decline the re-check after a long break: keep the band as it is."""
+    require_language(body.language)
+    if not identity.can_persist:
+        raise HTTPException(status_code=400, detail="A device id is required to save a level.")
+    learner = get_learner(db, identity, body.language)
+    if learner is None:
+        raise HTTPException(status_code=404, detail="No level saved for this language yet.")
+    level = keep_level(learner)
+    db.commit()
+    return {"ok": True, "level": level}
 
 
 @router.post("/news/save")

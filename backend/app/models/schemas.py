@@ -91,6 +91,8 @@ class LibraryResponse(BaseModel):
     language: LangCode
     placement: CefrLevel
     placed: bool = True
+    # Set after a long break: the band to start a quick re-check from.
+    recheck_from: CefrLevel | None = None
     next_id: str | None = None
     seen_lemmas: int = 0
     items: list[LibraryItem]
@@ -104,9 +106,18 @@ class PlacementQuestion(BaseModel):
     choices: list[str]
 
 
+class PlacementStage(BaseModel):
+    level: CefrLevel
+    answers: list[int] = Field(..., max_length=8)
+
+
 class PlacementSubmit(BaseModel):
+    """`start` and `stages` walk the ladder; bare `answers` is the old one-passage form."""
+
     language: LangCode
-    answers: list[int]
+    start: CefrLevel = "A1"
+    stages: list[PlacementStage] = Field(default_factory=list, max_length=8)
+    answers: list[int] | None = Field(default=None, max_length=8)
 
 
 class PlacementChoose(BaseModel):
@@ -115,12 +126,20 @@ class PlacementChoose(BaseModel):
 
 
 class PlacementResult(BaseModel):
+    """`done` false means read `next_level` next; nothing is saved until done."""
+
     language: LangCode
-    level: CefrLevel
+    level: CefrLevel | None
     correct: int
     total: int
     placed: bool = True
     next_id: str | None = None
+    done: bool = True
+    next_level: CefrLevel | None = None
+
+
+class PlacementKeep(BaseModel):
+    language: LangCode
 
 
 class TapRequest(BaseModel):
@@ -207,10 +226,12 @@ class Token(BaseModel):
 
 
 class PlacementRead(BaseModel):
+    """Plain text only: no glosses or grammar, so the read measures the reader alone."""
+
     language: LangCode
+    level: CefrLevel
     title: str
     text: str
-    tokens: list[Token]
     questions: list[PlacementQuestion]
 
 

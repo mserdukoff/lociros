@@ -12,12 +12,13 @@ import { Seal } from "@/components/seal";
 import { DemoBanner } from "@/components/demo-banner";
 import { AuthPanel } from "@/components/auth-panel";
 import { Art } from "@/components/landing/art";
-import { fetchLibrary, fetchReview, pricingHref, saveNews } from "@/lib/api";
+import { fetchLibrary, fetchReview, keepLevel, pricingHref, saveNews } from "@/lib/api";
 import { isDemo } from "@/lib/demo";
 import { hasStoredLanguage, loadLanguage } from "@/lib/device";
 import {
   isRtl,
   readingFont,
+  type CefrLevel,
   type LangCode,
   type LibraryItem,
   type LibraryResponse,
@@ -74,6 +75,49 @@ function TodayNews({
             }`}
           >
             {notice.saved ? "Saved" : "Save"}
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/** After a long break: re-check from the old band, or keep it. */
+function Recheck({
+  language,
+  name,
+  level,
+  keeping,
+  onKeep,
+}: {
+  language: LangCode;
+  name: string;
+  level: CefrLevel;
+  keeping: boolean;
+  onKeep: () => void;
+}) {
+  return (
+    <section className="flex flex-col gap-3">
+      <SectionLabel>Welcome back</SectionLabel>
+      <div className="sheet px-6 py-6">
+        <p className="text-[15px] leading-relaxed text-ink/70">
+          It has been a while since you read {name}. A few passages starting at {level} will show whether your
+          band has moved.
+        </p>
+        <div className="mt-5 flex items-baseline gap-6">
+          <Link
+            href={`/placement?language=${language}&from=${level}`}
+            className="text-sm text-ink underline decoration-ink/30 underline-offset-4"
+          >
+            Check my level
+          </Link>
+          <button
+            type="button"
+            onClick={onKeep}
+            disabled={keeping}
+            className="text-[13px] text-ink/50 underline decoration-ink/20 underline-offset-4 transition-colors hover:text-ink disabled:opacity-50"
+          >
+            Keep {level}
           </button>
         </div>
       </div>
@@ -187,6 +231,7 @@ export function Shelf() {
   const [failed, setFailed] = useState<{ language: LangCode; message: string } | null>(null);
   const [restockOpen, setRestockOpen] = useState(false);
   const [savingNews, setSavingNews] = useState(false);
+  const [keeping, setKeeping] = useState(false);
   const [newsError, setNewsError] = useState<string | null>(null);
   const library = data?.library.language === language ? data.library : null;
   const due = library ? (data?.due ?? 0) : 0;
@@ -217,6 +262,20 @@ export function Shelf() {
     if (library.language !== loadLanguage()) return;
     router.replace(`/placement?language=${library.language}`);
   }, [library, router]);
+
+  async function onKeep() {
+    if (!library || keeping) return;
+    setKeeping(true);
+    setNewsError(null);
+    try {
+      await keepLevel(library.language);
+      setData((prev) => (prev ? { ...prev, library: { ...prev.library, recheck_from: null } } : prev));
+    } catch (err) {
+      setNewsError(err instanceof Error ? err.message : "Could not keep that level.");
+    } finally {
+      setKeeping(false);
+    }
+  }
 
   async function onSaveNews() {
     const notice = library?.news_notice;
@@ -311,6 +370,16 @@ export function Shelf() {
         <p className="rounded-card border border-terracotta/30 bg-terracotta/10 px-4 py-3 text-sm text-terracotta">
           {error}
         </p>
+      ) : null}
+
+      {library?.placed !== false && library?.recheck_from ? (
+        <Recheck
+          language={library.language}
+          name={langName}
+          level={library.recheck_from}
+          keeping={keeping}
+          onKeep={() => void onKeep()}
+        />
       ) : null}
 
       {library?.placed !== false && library?.news_notice ? (

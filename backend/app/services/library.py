@@ -13,6 +13,7 @@ from app.services.learner import (
     calibration_passed,
     get_learner,
     list_stars,
+    needs_recheck,
     passage_lemmas,
     pick_next_id,
     read_ids,
@@ -118,6 +119,7 @@ def list_library(
     rows = shelf_rows(db, language)
     placement = DEFAULT_LEVEL
     placed = True
+    recheck_from = None
     seen: set[str] = set()
     already_read: set[str] = set()
     tapped: set[str] = set()
@@ -133,6 +135,8 @@ def list_library(
         else:
             placement = learner.level
             placed = bool(getattr(learner, "placed", 0)) or bool(already_read)
+            if needs_recheck(db, identity, language, learner):
+                recheck_from = learner.level
 
     next_id = pick_next_id(
         db, language, placement, already_read, tapped=tapped, shelf=rows
@@ -192,6 +196,7 @@ def list_library(
         language=language,  # type: ignore[arg-type]
         placement=placement,  # type: ignore[arg-type]
         placed=placed,
+        recheck_from=recheck_from,  # type: ignore[arg-type]
         next_id=next_id,
         seen_lemmas=len(seen),
         items=items,

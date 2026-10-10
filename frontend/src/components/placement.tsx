@@ -2,36 +2,24 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
-import { useEscape } from "@/lib/use-escape";
+import { useEffect, useState } from "react";
+import { AppRail, MobileNav } from "@/components/app-shell";
 import { BandStrip } from "@/components/band";
-import { GlossCard } from "@/components/gloss-card";
 import { Art } from "@/components/landing/art";
 import { LogoMark } from "@/components/logo";
-import { PassageArticle } from "@/components/passage-article";
-import {
-  fetchMe,
-  fetchPlacement,
-  recordTap,
-  starWord,
-  submitPlacement,
-  track,
-  unstarWord,
-} from "@/lib/api";
-import {
-  hasStoredLanguage,
-  loadLanguage,
-  markTapHintSeen,
-  saveLanguage,
-  useTapHintSeen,
-} from "@/lib/device";
-import type { LangCode, PlacementRead, PlacementResult } from "@/lib/types";
+import { fetchMe, fetchPlacement, submitPlacement, track } from "@/lib/api";
+import { hasStoredLanguage, loadLanguage, saveLanguage } from "@/lib/device";
+import type { CefrLevel, LangCode, PlacementRead, PlacementResult, PlacementStage } from "@/lib/types";
 import { enabledLanguages, readingFont } from "@/lib/types";
 
 const NAMES = { ja: "Japanese", ru: "Russian", it: "Italian", ar: "Arabic" } as const;
 
 function isLang(value: string | null): value is LangCode {
   return value === "ja" || value === "ru" || value === "it" || value === "ar";
+}
+
+function isPlacementLevel(value: string | null): value is CefrLevel {
+  return value === "A1" || value === "A2" || value === "B1" || value === "B2";
 }
 
 type Choices = ReturnType<typeof enabledLanguages>;
@@ -74,7 +62,7 @@ function LanguageStep({
         ))}
       </div>
       <button type="button" onClick={() => onChoose(pick)} className="btn-primary mt-8">
-        Read a short passage
+        Start reading
       </button>
     </section>
   );
@@ -84,20 +72,16 @@ export function PlacementReadView() {
   const params = useSearchParams();
   const router = useRouter();
   const requested = params.get("language");
+  const from = params.get("from");
   const [choices, setChoices] = useState<Choices | null>(null);
   const [language, setLanguage] = useState<LangCode | null>(null);
   const [choosing, setChoosing] = useState(false);
   const [read, setRead] = useState<PlacementRead | null>(null);
+  const [stages, setStages] = useState<PlacementStage[]>([]);
   const [picks, setPicks] = useState<number[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<PlacementResult | null>(null);
-  const [selected, setSelected] = useState<number | null>(null);
-  const closeGloss = useCallback(() => setSelected(null), []);
-  useEscape(selected !== null, closeGloss);
-  const hint = !useTapHintSeen();
-  const [starred, setStarred] = useState<Set<string>>(new Set());
-  const [savingWord, setSavingWord] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -123,19 +107,22 @@ export function PlacementReadView() {
     };
   }, [requested]);
 
+  const recheck = isPlacementLevel(from) && language !== null && language === requested ? from : null;
+  const start: CefrLevel = recheck ?? "A1";
+
   useEffect(() => {
     if (!language || choosing) return;
     let cancelled = false;
     setRead(null);
+    setStages([]);
     setResult(null);
     setError(null);
-    setSelected(null);
-    fetchPlacement(language)
+    fetchPlacement(language, start)
       .then((data) => {
         if (cancelled) return;
         setRead(data);
         setPicks(data.questions.map(() => -1));
-        track("placement_start", { language });
+        track("placement_start", { language, start });
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(err instanceof Error ? err.message : "Could not open the placement read.");
@@ -143,45 +130,12 @@ export function PlacementReadView() {
     return () => {
       cancelled = true;
     };
-  }, [language, choosing]);
+  }, [language, choosing, start]);
 
   function onChoose(next: LangCode) {
     saveLanguage(next);
     setLanguage(next);
     setChoosing(false);
-  }
-
-  function onSelect(index: number | null) {
-    setSelected(index);
-    if (index == null || !read || !language) return;
-    const tok = read.tokens[index];
-    if (!tok?.is_word) return;
-    if (hint) markTapHintSeen();
-    if (tok.lemma) recordTap(tok.lemma, language);
-  }
-
-  async function onToggleSave() {
-    const tok = selected != null ? read?.tokens[selected] : null;
-    const lemma = tok?.lemma;
-    if (!lemma || !language) return;
-    setSavingWord(true);
-    try {
-      if (starred.has(lemma)) {
-        await unstarWord(lemma, language);
-        setStarred((prev) => {
-          const next = new Set(prev);
-          next.delete(lemma);
-          return next;
-        });
-      } else {
-        await starWord({ lemma, gloss: tok.gloss, passage_id: null, language });
-        setStarred((prev) => new Set(prev).add(lemma));
-      }
-    } catch {
-      /* keep current saved state */
-    } finally {
-      setSavingWord(false);
-    }
   }
 
   async function onSubmit() {
@@ -192,10 +146,17 @@ export function PlacementReadView() {
     setSending(true);
     setError(null);
     try {
-      const scored = await submitPlacement(language, picks);
-      saveLanguage(language);
-      setSelected(null);
-      setResult(scored);
+      const sofar = [...stages, { level: read.level, answers: picks }];
+      const scored = await submitPlacement(language, start, sofar);
+      if (scored.done === false && scored.next_level) {
+        const next = await fetchPlacement(language, scored.next_level);
+        setStages(sofar);
+        setRead(next);
+        setPicks(next.questions.map(() => -1));
+      } else {
+        saveLanguage(language);
+        setResult(scored);
+      }
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save that level.");
@@ -207,19 +168,16 @@ export function PlacementReadView() {
   const multi = (choices?.length ?? 0) > 1;
   const name = language ? NAMES[language] : null;
   const font = language ? readingFont(language) : "";
-  const selectedToken = selected != null ? read?.tokens[selected] : null;
-  const glossOpen = Boolean(selectedToken?.is_word && !result);
 
   return (
-    <div
-      className={`mx-auto flex min-h-full w-full max-w-[42rem] flex-col px-5 pt-7 sm:px-8 sm:pt-9 ${
-        glossOpen ? "pb-[min(40rem,80vh)]" : "pb-24"
-      }`}
-    >
+    <div className="relative min-h-full overflow-x-clip lg:pl-[13.5rem]">
+      <AppRail language={language ?? undefined} current="/library" />
+    <div className="mx-auto flex min-h-full w-full max-w-[42rem] flex-col px-5 pb-28 pt-7 sm:px-8 sm:pt-9 lg:pb-24">
+      <MobileNav current="/library" />
       <header className="flex items-center justify-between gap-4">
         <Link
           href="/"
-          className="flex items-center gap-2 font-display text-[1.125rem] font-medium tracking-[-0.02em] text-ink"
+          className="flex items-center gap-2 font-display text-[1.125rem] font-medium tracking-[-0.02em] text-ink lg:invisible"
         >
           <LogoMark className="h-[1.8em] w-auto shrink-0" />
           Lociros
@@ -247,10 +205,10 @@ export function PlacementReadView() {
             className="cliff-fade mb-8 ml-auto mt-4 hidden aspect-[4/3] w-[22rem] sm:block"
           />
 
-          {result ? (
+          {result?.level ? (
             <section aria-live="polite" className="mt-10 sm:mt-0">
               <h1 className="t-heading text-[2rem] text-ink sm:text-[2.4rem]">
-                Your {name} starts at {result.level}.
+                Your {name} {recheck ? "is at" : "starts at"} {result.level}.
               </h1>
               <div className="mt-5">
                 <BandStrip level={result.level} />
@@ -268,13 +226,26 @@ export function PlacementReadView() {
                 Read the next one
               </button>
             </section>
+          ) : stages.length > 0 ? (
+            <p className="t-eyebrow mt-10 sm:mt-0">Passage {stages.length + 1}</p>
+          ) : recheck ? (
+            <>
+              <h1 className="t-heading mt-10 text-[2rem] text-ink sm:mt-0 sm:text-[2.4rem]">
+                Welcome back.
+              </h1>
+              <p className="mt-3 max-w-[36rem] text-[15px] leading-relaxed text-ink/70">
+                It has been a while, so we start at {recheck}, your last {name} level, and move up or down from
+                there. Four questions after each passage.
+              </p>
+            </>
           ) : (
             <>
               <h1 className="t-heading mt-10 text-[2rem] text-ink sm:mt-0 sm:text-[2.4rem]">
-                One short passage.
+                A few short passages.
               </h1>
               <p className="mt-3 max-w-[36rem] text-[15px] leading-relaxed text-ink/70">
-                Read it, then answer four questions. That sets your {name} level.
+                Each one is a little harder. Answer four questions after each, and we stop when the reading gets
+                too hard. That sets your {name} level.
               </p>
             </>
           )}
@@ -283,20 +254,21 @@ export function PlacementReadView() {
 
           {read && !result ? (
             <>
-              {hint ? <p className="mt-10 text-[14px] text-ink">Tap any word.</p> : null}
               <h2
+                lang={language}
                 dir={language === "ar" ? "rtl" : undefined}
-                className={`${hint ? "mt-3" : "mt-10"} text-[1.8rem] leading-snug text-ink ${font}`}
+                className={`mt-10 text-[1.8rem] leading-snug text-ink ${font}`}
               >
                 {read.title}
               </h2>
-              <PassageArticle
-                tokens={read.tokens}
-                language={language}
-                selected={selected}
-                onSelect={onSelect}
-                className="mt-6 text-[1.45rem] sm:text-[1.7rem]"
-              />
+              {/* Plain text on purpose: no glosses or grammar, so the read measures the reader alone. */}
+              <article
+                lang={language}
+                dir={language === "ar" ? "rtl" : "ltr"}
+                className={`mt-6 whitespace-pre-wrap text-[1.45rem] leading-[1.85] text-ink sm:text-[1.7rem] ${font}`}
+              >
+                {read.text}
+              </article>
               <section className="mt-12 border-t border-rule pt-8">
                 <ol className="flex flex-col gap-6">
                   {read.questions.map((question, qIndex) => (
@@ -341,32 +313,7 @@ export function PlacementReadView() {
       ) : (
         <p className="mt-10 text-sm text-ink/45">Opening the passage…</p>
       )}
-
-      {glossOpen && selectedToken && language ? (
-        <div
-          className="fixed inset-x-0 bottom-0 z-20 border-t border-rule bg-paper-raised px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-5 sm:inset-x-auto sm:bottom-6 sm:left-1/2 sm:w-[min(38rem,calc(100%-2rem))] sm:-translate-x-1/2 sm:rounded-[12px] sm:border sm:border-ink/8 sm:px-8 sm:pb-7 sm:pt-6 sm:shadow-float"
-          role="dialog"
-          aria-label="Word gloss"
-        >
-          <div className="mx-auto flex max-w-[42rem] items-start justify-between gap-4 sm:max-w-none">
-            <GlossCard
-              token={selectedToken}
-              language={language}
-              saved={Boolean(selectedToken.lemma && starred.has(selectedToken.lemma))}
-              saving={savingWord}
-              onToggleSave={onToggleSave}
-            />
-            <button
-              type="button"
-              onClick={() => setSelected(null)}
-              className="t-quiet shrink-0"
-              aria-label="Close gloss"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      ) : null}
+    </div>
     </div>
   );
 }

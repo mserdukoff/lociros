@@ -186,3 +186,80 @@ def test_placement_choose_sets_level(client):
     assert library["placement"] == "B1"
     bad = client.post("/api/placement/choose", json={"language": "ja", "level": "C2"}, headers=DEVICE)
     assert bad.status_code == 422
+
+
+def _keys(language: str, level: str, right: bool = True) -> list[int]:
+    from app.services.placement import _LADDER
+
+    keys = [q[2] for q in _LADDER[language][level]["questions"]]
+    return keys if right else [(k + 1) % 3 for k in keys]
+
+
+def test_placement_ladder_saves_only_when_done(client):
+    one = {"language": "ja", "stages": [{"level": "A1", "answers": _keys("ja", "A1")}]}
+    res = client.post("/api/placement", json=one, headers=DEVICE).json()
+    assert res["done"] is False and res["next_level"] == "A2" and res["level"] is None
+    assert client.get("/api/library?language=ja", headers=DEVICE).json()["placed"] is False
+
+    assert client.get("/api/placement?language=ja&level=A2").json()["level"] == "A2"
+    assert client.get("/api/placement?language=ja&level=C1").status_code == 400
+
+    full = {
+        "language": "ja",
+        "stages": [
+            {"level": "A1", "answers": _keys("ja", "A1")},
+            {"level": "A2", "answers": _keys("ja", "A2", right=False)},
+        ],
+    }
+    res = client.post("/api/placement", json=full, headers=DEVICE).json()
+    assert res["done"] is True and res["level"] == "A1"
+    assert client.get("/api/library?language=ja", headers=DEVICE).json()["placement"] == "A1"
+
+    skip = {"language": "ja", "stages": [{"level": "B2", "answers": _keys("ja", "B2")}]}
+    assert client.post("/api/placement", json=skip, headers=DEVICE).status_code == 400
+
+
+def test_old_single_passage_submit_still_places(client):
+    res = client.post(
+        "/api/placement", json={"language": "ru", "answers": _keys("ru", "A1")}, headers=DEVICE
+    ).json()
+    assert res["done"] is True and res["level"] == "A2"
+
+
+def test_recheck_after_a_long_break(client, db):
+    from app.models.db import LearnerRow
+
+    client.post("/api/placement/choose", json={"language": "it", "level": "B1"}, headers=DEVICE)
+    assert client.get("/api/library?language=it", headers=DEVICE).json()["recheck_from"] is None
+
+    learner = db.query(LearnerRow).filter_by(device_id=DEVICE["X-Device-Id"], language="it").one()
+    learner.updated_at = datetime.now(timezone.utc) - timedelta(days=45)
+    db.commit()
+    assert client.get("/api/library?language=it", headers=DEVICE).json()["recheck_from"] == "B1"
+
+    recheck = {
+        "language": "it",
+        "start": "B1",
+        "stages": [
+            {"level": "B1", "answers": _keys("it", "B1", right=False)},
+            {"level": "A2", "answers": _keys("it", "A2")},
+        ],
+    }
+    res = client.post("/api/placement", json=recheck, headers=DEVICE).json()
+    assert res["level"] == "A2"
+    library = client.get("/api/library?language=it", headers=DEVICE).json()
+    assert library["placement"] == "A2" and library["recheck_from"] is None
+
+
+def test_keep_level_dismisses_the_recheck(client, db):
+    from app.models.db import LearnerRow
+
+    assert client.post("/api/placement/keep", json={"language": "ja"}, headers=DEVICE).status_code == 404
+    client.post("/api/placement/choose", json={"language": "ja", "level": "B2"}, headers=DEVICE)
+    learner = db.query(LearnerRow).filter_by(device_id=DEVICE["X-Device-Id"], language="ja").one()
+    learner.updated_at = datetime.now(timezone.utc) - timedelta(days=60)
+    db.commit()
+    assert client.get("/api/library?language=ja", headers=DEVICE).json()["recheck_from"] == "B2"
+    res = client.post("/api/placement/keep", json={"language": "ja"}, headers=DEVICE)
+    assert res.json() == {"ok": True, "level": "B2"}
+    assert client.get("/api/library?language=ja", headers=DEVICE).json()["recheck_from"] is None

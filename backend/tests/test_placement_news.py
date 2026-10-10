@@ -10,24 +10,84 @@ from app.services.generate import hold_news_to_level, save_authored_passage
 from app.services.learner import get_or_create_learner, set_placed_level
 from app.services.library import list_library
 from app.services.news import save_news
-from app.services.placement import band_for_score, score_placement
+from app.services.placement import (
+    _LADDER,
+    LEVELS,
+    next_step,
+    placement_read,
+    score_legacy,
+)
 from app.services.validator import ValidationResult, vocab_exempt
 
 
-def test_band_for_score_spreads_four_questions():
-    assert band_for_score(0) == "A1"
-    assert band_for_score(1) == "A1"
-    assert band_for_score(2) == "A2"
-    assert band_for_score(3) == "B1"
-    assert band_for_score(4) == "B2"
+def _right(language: str, level: str) -> list[int]:
+    return [q[2] for q in _LADDER[language][level]["questions"]]
 
 
-def test_score_placement_uses_the_answer_key():
-    correct, total, level = score_placement("ja", [1, 2, 0, 2])
-    assert (correct, total, level) == (4, 4, "B2")
-    correct, total, level = score_placement("ru", [0, 0, 1, 0])
-    assert correct == 0
-    assert level == "A1"
+def _wrong(language: str, level: str) -> list[int]:
+    return [(k + 1) % 3 for k in _right(language, level)]
+
+
+def test_every_language_has_a_passage_per_band():
+    for language, ladder in _LADDER.items():
+        assert tuple(ladder) == LEVELS, language
+        for level, spec in ladder.items():
+            assert spec["text"] and spec["title"], (language, level)
+            assert len(spec["questions"]) == 4, (language, level)
+            for _prompt, choices, key in spec["questions"]:
+                assert 0 <= key < len(choices) == 3, (language, level)
+
+
+def test_first_placement_climbs_until_a_fail():
+    stages = [("A1", _right("ja", "A1"))]
+    step = next_step("ja", "A1", stages)
+    assert not step.done and step.next_level == "A2"
+    stages.append(("A2", _right("ja", "A2")))
+    stages.append(("B1", _wrong("ja", "B1")))
+    step = next_step("ja", "A1", stages)
+    assert step.done and step.level == "A2"
+
+
+def test_one_easy_passage_no_longer_means_b2():
+    # Every A1 answer right, then lost at A2: that reader is A1, not B2.
+    step = next_step("ru", "A1", [("A1", _right("ru", "A1")), ("A2", _wrong("ru", "A2"))])
+    assert step.level == "A1"
+    assert next_step("ru", "A1", [("A1", _wrong("ru", "A1"))]).level == "A1"
+    climb = [(level, _right("it", level)) for level in LEVELS]
+    assert next_step("it", "A1", climb).level == "B2"
+
+
+def test_recheck_starts_at_the_old_band():
+    down = next_step("ar", "B1", [("B1", _wrong("ar", "B1"))])
+    assert not down.done and down.next_level == "A2"
+    settled = next_step("ar", "B1", [("B1", _wrong("ar", "B1")), ("A2", _right("ar", "A2"))])
+    assert settled.level == "A2"
+    up = next_step("ar", "B1", [("B1", _right("ar", "B1")), ("B2", _wrong("ar", "B2"))])
+    assert up.level == "B1"
+    floor = [(level, _wrong("ar", level)) for level in ("B1", "A2", "A1")]
+    assert next_step("ar", "B1", floor).level == "A1"
+
+
+def test_ladder_rejects_skipping_ahead():
+    import pytest
+
+    with pytest.raises(ValueError):
+        next_step("ja", "A1", [("B2", _right("ja", "B2"))])
+    with pytest.raises(ValueError):
+        next_step("ja", "A1", [("A1", _wrong("ja", "A1")), ("A2", _right("ja", "A2"))])
+
+
+def test_legacy_single_passage_caps_at_a2():
+    assert score_legacy("ja", _right("ja", "A1")).level == "A2"
+    assert score_legacy("ja", _wrong("ja", "A1")).level == "A1"
+
+
+def test_placement_read_is_plain_text():
+    for language in ("ja", "ru", "it", "ar"):
+        for level in LEVELS:
+            body = placement_read(language, level).model_dump()
+            assert set(body) == {"language", "level", "title", "text", "questions"}
+            assert body["level"] == level and body["text"]
 
 
 def test_questions_come_from_the_translation():

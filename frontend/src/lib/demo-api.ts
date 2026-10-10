@@ -18,6 +18,7 @@ import type {
   FeedbackRating,
   FeedbackResult,
   LangCode,
+  PlacementStage,
   LibraryResponse,
   MeResponse,
   Passage,
@@ -125,15 +126,20 @@ export async function fetchPlacement(language: LangCode) {
   const spec = PLACEMENT[language];
   return {
     language,
+    level: "A1" as const,
     title: spec.title,
     text: spec.tokens.map((tok) => tok.text + (tok.ws ?? "")).join(""),
-    tokens: spec.tokens,
     questions: spec.questions,
   };
 }
 
-export async function submitPlacement(language: LangCode, answers: number[]) {
-  return demoSubmitPlacement(language, answers);
+export async function submitPlacement(language: LangCode, stages: PlacementStage[]) {
+  return demoSubmitPlacement(language, stages[0]?.answers ?? []);
+}
+
+export async function keepLevel(language: LangCode) {
+  void language;
+  return { ok: true };
 }
 
 export async function choosePlacement(language: LangCode, level: CefrLevel) {

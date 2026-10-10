@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 import threading
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, defer
 
@@ -28,6 +29,8 @@ from app.services.validator_ar import CONTENT_POS as AR_CONTENT
 LEVELS = ("A1", "A2", "B1", "B2")
 DEFAULT_LEVEL = "A2"
 PLACEMENT_STREAK = 3
+# A reader away this long is offered a re-check that starts at their old band.
+RECHECK_AFTER = timedelta(days=30)
 
 __all__ = [
     "LEVELS",
@@ -40,6 +43,8 @@ __all__ = [
     "calibration_passed",
     "bump_level",
     "apply_placement",
+    "keep_level",
+    "needs_recheck",
     "get_learner",
     "get_or_create_learner",
     "seen_lemmas",
@@ -225,6 +230,57 @@ def apply_placement(learner: LearnerRow, rating: str) -> str:
         down = 0
     learner.consecutive_up = up
     learner.consecutive_down = down
+    learner.updated_at = datetime.now(timezone.utc)
+    return learner.level
+
+
+def _aware(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
+def last_activity(
+    db: Session, identity: Identity, language: str, learner: LearnerRow
+) -> datetime | None:
+    """Latest band change, rating, tap, or finished read in this language."""
+    tap = (
+        apply_owner_filter(db.query(func.max(LearnerTapRow.seen_at)), LearnerTapRow, identity)
+        .filter(LearnerTapRow.language == language)
+        .scalar()
+    )
+    read = (
+        apply_owner_filter(
+            db.query(func.max(LearnerReadRow.created_at))
+            .select_from(LearnerReadRow)
+            .join(PassageRow, PassageRow.id == LearnerReadRow.passage_id),
+            LearnerReadRow,
+            identity,
+        )
+        .filter(PassageRow.language == language)
+        .scalar()
+    )
+    times = [t for t in (_aware(learner.updated_at), _aware(tap), _aware(read)) if t]
+    return max(times) if times else None
+
+
+def needs_recheck(
+    db: Session,
+    identity: Identity,
+    language: str,
+    learner: LearnerRow,
+    now: datetime | None = None,
+) -> bool:
+    if not getattr(learner, "placed", 0):
+        return False
+    last = last_activity(db, identity, language, learner)
+    if last is None:
+        return False
+    return (now or datetime.now(timezone.utc)) - last >= RECHECK_AFTER
+
+
+def keep_level(learner: LearnerRow) -> str:
+    """The reader declined the re-check; the band stands and the clock restarts."""
     learner.updated_at = datetime.now(timezone.utc)
     return learner.level
 
