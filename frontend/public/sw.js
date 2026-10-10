@@ -1,4 +1,4 @@
-const CACHE = "lociros-offline-v2";
+const CACHE = "lociros-offline-v3";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(["/manifest.json"])));
@@ -32,6 +32,16 @@ self.addEventListener("fetch", (event) => {
     );
     return;
   }
+  // Only content-hashed or rarely changing files are safe to serve cache-first;
+  // RSC payloads for client navigation must always come from the network.
+  const cacheable =
+    url.origin === self.location.origin &&
+    !url.searchParams.has("_rsc") &&
+    !req.headers.has("RSC") &&
+    (url.pathname.startsWith("/_next/static/") ||
+      url.pathname.startsWith("/art/") ||
+      ["image", "font"].includes(req.destination));
+  if (!cacheable) return;
   event.respondWith(
     caches.match(req).then((cached) => {
       const network = fetch(req)
