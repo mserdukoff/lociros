@@ -43,12 +43,13 @@ write_upstream() {
     echo "# Rewritten by scripts/lightsail-run.sh on every deploy."
     echo "upstream lociros_api {"
     echo "    least_conn;"
-    i=1
-    while [ "$i" -le "$API_REPLICAS" ]; do
+    # sh has no locals: a counter named i here would clobber the deploy loop's.
+    n=1
+    while [ "$n" -le "$API_REPLICAS" ]; do
       flag=""
-      [ "$i" = "${1:-}" ] && flag=" down"
-      echo "    server 127.0.0.1:$((8000 + i)) max_fails=3 fail_timeout=10s$flag;"
-      i=$((i + 1))
+      [ "$n" = "${1:-}" ] && flag=" down"
+      echo "    server 127.0.0.1:$((8000 + n)) max_fails=3 fail_timeout=10s$flag;"
+      n=$((n + 1))
     done
     echo "    keepalive 64;"
     echo "    keepalive_timeout 60s;"
@@ -95,8 +96,10 @@ if [ "$(docker inspect -f '{{.State.Running}}' "$REDIS_NAME" 2>/dev/null)" != "t
     redis-server --save "" --appendonly no --maxmemory 64mb --maxmemory-policy allkeys-lru >/dev/null
 fi
 
-i=1
-while [ "$i" -le "$API_REPLICAS" ]; do
+# Highest replica first: a replica that does not exist yet starts while the
+# lower ones keep serving, so scaling 1 -> 2 never leaves nginx with no backend.
+i="$API_REPLICAS"
+while [ "$i" -ge 1 ]; do
   name="lociros-api-$i"
   port=$((8000 + i))
   if [ "$i" -eq 1 ]; then
@@ -131,7 +134,7 @@ while [ "$i" -le "$API_REPLICAS" ]; do
     "$IMAGE" >/dev/null
   wait_healthy "$name" "$port"
   echo "$name is healthy."
-  i=$((i + 1))
+  i=$((i - 1))
 done
 write_upstream
 
