@@ -11,6 +11,7 @@ import { DemoBanner } from "@/components/demo-banner";
 import { LogoMark } from "@/components/logo";
 import { fetchLibrary, fetchMe, fetchShelfCounts, track } from "@/lib/api";
 import { isDemo } from "@/lib/demo";
+import { languageSlug } from "@/lib/site";
 import {
   getDeviceId,
   hasStoredLanguage,
@@ -975,7 +976,19 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
             Every passage checked before you see it.{" "}
             {demo ? "A single-user demo." : "An account keeps your shelf."}
           </span>
+          <nav aria-label="Graded readers" className="flex flex-wrap gap-x-4 gap-y-1">
+            {offered.map((l) => (
+              <Link key={l.id} href={`/readers/${languageSlug(l.id)}`} className="t-quiet">
+                {l.label} readers
+              </Link>
+            ))}
+          </nav>
           <span className="flex gap-4">
+            {!demo ? (
+              <Link href="/pricing" className="t-quiet">
+                Pricing
+              </Link>
+            ) : null}
             <Link href="/privacy" className="t-quiet">
               Privacy
             </Link>

@@ -7,10 +7,9 @@ import { BandStrip } from "@/components/band";
 import { GlossCard } from "@/components/gloss-card";
 import { Art } from "@/components/landing/art";
 import { GrammarLegend, PassageArticle } from "@/components/passage-article";
-import { ReaderRail } from "@/components/reader-rail";
+import { AppRail, MobileNav } from "@/components/app-shell";
 import { Seal } from "@/components/seal";
 import { AuthPanel } from "@/components/auth-panel";
-import { MobileNav } from "@/components/mobile-nav";
 import {
   attachGuest,
   fetchLibrary,
@@ -583,13 +582,13 @@ export function Reader({ passage }: { passage: Passage }) {
 
   return (
     <div className="relative min-h-full overflow-x-clip lg:pl-[13.5rem]">
-      <ReaderRail language={passage.language} current="/library" />
+      <AppRail language={passage.language} current="/library" />
     <div
       className={`relative mx-auto flex w-full max-w-[47rem] flex-col px-5 pt-7 sm:px-8 sm:pt-9 ${
         glossOpen ? "pb-[min(40rem,80vh)]" : "pb-28 lg:pb-16"
       }`}
     >
-      <MobileNav />
+      <MobileNav current="/library" />
       <Art
         key={passage.language}
         src={`wash-${passage.language}`}
@@ -619,6 +618,7 @@ export function Reader({ passage }: { passage: Passage }) {
           {newPct != null ? ` · ${newPct}% new` : ""}
         </p>
         <h1
+          lang={passage.language}
           dir={ar ? "rtl" : undefined}
           className={`mt-4 text-[2.3rem] leading-[1.15] tracking-[-0.01em] text-ink sm:text-[3.1rem] ${font}`}
         >
@@ -702,7 +702,7 @@ export function Reader({ passage }: { passage: Passage }) {
           audioSentence={audioSentence}
           focusSentence={focusSentence}
           sentenceMode={showSentence}
-          className="mt-8 text-[1.45rem] sm:text-[1.7rem]"
+          className="passage-body mt-8 text-[1.45rem] sm:text-[1.7rem]"
         />
       </div>
 

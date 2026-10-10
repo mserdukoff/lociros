@@ -2,12 +2,12 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { AppShell, PageHeading } from "@/components/app-shell";
 import { Art } from "@/components/landing/art";
-import { MobileNav } from "@/components/mobile-nav";
+import { LanguageSwitch, useAppLanguage, useMe } from "@/components/language-switch";
 import { StrokeOrderButton } from "@/components/stroke-order";
 import { fetchReview, submitReview } from "@/lib/api";
-import { loadLanguage } from "@/lib/device";
-import { kanjiChars, readingFont, type LangCode, type ReviewCard } from "@/lib/types";
+import { kanjiChars, LANGUAGES, readingFont, type LangCode, type ReviewCard } from "@/lib/types";
 
 const RATINGS = ["again", "hard", "good", "easy"] as const;
 type Rating = (typeof RATINGS)[number];
@@ -80,26 +80,35 @@ function ReviewRow({
 }
 
 export default function ReviewPage() {
-  const [cards, setCards] = useState<ReviewCard[]>([]);
+  const { me, loaded } = useMe();
+  const { language, languages, choose } = useAppLanguage(me);
+  const [data, setData] = useState<{ language: LangCode; cards: ReviewCard[] } | null>(null);
+  const [failed, setFailed] = useState<{ language: LangCode; message: string } | null>(null);
   const [rated, setRated] = useState<Record<number, Rating>>({});
   const [rowErrors, setRowErrors] = useState<Record<number, string>>({});
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const language = loadLanguage();
   const font = readingFont(language);
+  const name = LANGUAGES.find((l) => l.id === language)?.label ?? "Japanese";
+  const cards = data?.language === language ? data.cards : [];
+  const error = failed?.language === language ? failed.message : null;
+  const loading = data?.language !== language && !error;
 
   useEffect(() => {
-    setLoading(true);
-    setError(null);
+    if (!loaded) return;
+    let cancelled = false;
     void fetchReview(language)
-      .then((data) => {
-        setCards(data.cards);
+      .then((next) => {
+        if (cancelled) return;
+        setData({ language, cards: next.cards });
         setRated({});
         setRowErrors({});
       })
-      .catch((err) => setError(err instanceof Error ? err.message : "Could not load review."))
-      .finally(() => setLoading(false));
-  }, [language]);
+      .catch((err) => {
+        if (!cancelled) setFailed({ language, message: err instanceof Error ? err.message : "Could not load review." });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [language, loaded]);
 
   const total = cards.length;
   const remaining = total - Object.keys(rated).length;
@@ -130,8 +139,8 @@ export default function ReviewPage() {
     }
   }
 
-  const status = loading
-    ? ""
+  const heading = loading
+    ? "Opening review…"
     : total === 0
       ? "Nothing due"
       : allDone
@@ -139,35 +148,39 @@ export default function ReviewPage() {
         : `${remaining} of ${total} due`;
 
   return (
-    <main className="mx-auto flex min-h-full w-full max-w-[36rem] flex-col px-5 pb-28 pt-8 sm:px-8 sm:pt-10 lg:pb-24">
-      <MobileNav current="/review" />
-      <header className="flex items-center justify-between gap-4">
-        <Link href="/library" className="t-quiet">
-          ← Library
-        </Link>
-        <span className="tnum text-[13px] text-ink/50">{status}</span>
-      </header>
-
-      <section className="mt-12 flex items-end justify-between gap-6">
+    <AppShell
+      current="/review"
+      language={language}
+      actions={<LanguageSwitch value={language} languages={languages} onChange={choose} />}
+    >
+      <section className="flex items-end justify-between gap-6">
         <div>
-          <p className="t-eyebrow">Saved words</p>
-          <h1 className="t-heading mt-4 text-[2rem] text-ink sm:text-[2.5rem]">Review</h1>
+          <PageHeading eyebrow={`${name} · Review`} muted={loading}>
+            {heading}
+          </PageHeading>
         </div>
-        <Art src="card-catalog" className="-mb-4 -mt-10 hidden w-[13rem] sm:block" />
+        <Art src="card-catalog" className="-mb-4 -mt-10 hidden w-[11rem] shrink-0 sm:block" />
       </section>
 
       {error ? <p className="mt-8 text-sm text-terracotta">{error}</p> : null}
 
       {!loading && total === 0 && !error ? (
-        <p className="mt-10 max-w-[26rem] text-[1.0625rem] leading-relaxed text-ink/60">
-          Nothing due. Read a passage and save a word from its gloss.
+        <p className="mt-6 max-w-[26rem] text-[1.0625rem] leading-relaxed text-ink/60">
+          Read a passage and save a word from its gloss. It comes up here when it is due.{" "}
+          <Link href="/words" className="underline decoration-ink/25 underline-offset-4 hover:text-ink">
+            See your saved words
+          </Link>
+          .
         </p>
       ) : null}
 
       {allDone ? (
-        <p className="mt-8 max-w-[26rem] text-[15px] leading-relaxed text-ink/50">
-          That is everything due for now. Come back later, or read another passage and save a
-          word from its gloss.
+        <p className="mt-6 max-w-[26rem] text-[15px] leading-relaxed text-ink/50">
+          That is everything due for now. Come back later, or{" "}
+          <Link href="/library" className="underline decoration-ink/25 underline-offset-4 hover:text-ink">
+            read another passage
+          </Link>
+          .
         </p>
       ) : null}
 
@@ -186,6 +199,6 @@ export default function ReviewPage() {
           ))}
         </ul>
       ) : null}
-    </main>
+    </AppShell>
   );
 }

@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 
 from sqlalchemy import or_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 
 from app.models.db import SHELF_PUBLIC, PassageRow
 from app.models.schemas import LibraryItem, LibraryResponse
@@ -51,6 +51,61 @@ def shelf_counts(db: Session) -> dict[str, int]:
             counts[row.language] = counts.get(row.language, 0) + 1
     _counts_cache = (now, counts)
     return dict(counts)
+
+
+_catalog_cache: tuple[float, list[dict]] | None = None
+_CATALOG_COLUMNS = (
+    PassageRow.id,
+    PassageRow.language,
+    PassageRow.level,
+    PassageRow.title,
+    PassageRow.topic,
+    PassageRow.genre,
+    PassageRow.word_count,
+    PassageRow.series_id,
+    PassageRow.chapter_index,
+    PassageRow.calibration_json,
+    PassageRow.created_at,
+)
+
+
+def public_catalog(db: Session) -> list[dict]:
+    """Every passage the shelf offers, for the sitemap and the language pages. News is left out.
+
+    Kept in-process for ten minutes, like the counts.
+    """
+    global _catalog_cache
+    now = time.monotonic()
+    if _catalog_cache is not None and now - _catalog_cache[0] < _COUNTS_TTL:
+        return list(_catalog_cache[1])
+    rows = (
+        db.query(PassageRow)
+        .options(load_only(*_CATALOG_COLUMNS))
+        .filter(
+            PassageRow.shelf_status == SHELF_PUBLIC,
+            or_(PassageRow.genre.is_(None), PassageRow.genre != "news"),
+        )
+        .order_by(PassageRow.created_at.desc())
+        .all()
+    )
+    items = [
+        {
+            "id": row.id,
+            "language": row.language,
+            "level": row.level,
+            "title": row.title,
+            "topic": row.topic,
+            "genre": row.genre,
+            "word_count": row.word_count,
+            "series_id": row.series_id,
+            "chapter_index": row.chapter_index,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+        }
+        for row in rows
+        if row.language and calibration_passed(row)
+    ]
+    _catalog_cache = (now, items)
+    return list(items)
 
 
 def list_library(

@@ -1,12 +1,12 @@
 import Link from "next/link";
+import { AppRail, MobileNav } from "@/components/app-shell";
 
-/** Static composition, no shimmer: the rail, a title rule, the tab row, and a few text lines. */
+/** Static composition, no shimmer: the real rail, a title rule, the tab row, and a few text lines. */
 export default function PassageLoading() {
   return (
     <div className="relative min-h-full lg:pl-[13.5rem]">
-      <aside className="fixed inset-y-0 left-0 hidden w-[13.5rem] border-r border-rule/80 bg-paper-raised/40 px-7 pt-9 lg:block">
-        <div className="h-6 w-24 rounded-[3px] bg-rule/70" />
-      </aside>
+      <AppRail current="/library" />
+      <MobileNav current="/library" />
       <div className="mx-auto flex w-full max-w-[47rem] flex-col px-5 pt-7 sm:px-8 sm:pt-9">
         <header className="flex items-center justify-between gap-4">
           <Link href="/library" className="t-quiet">

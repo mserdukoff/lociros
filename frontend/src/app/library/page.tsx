@@ -1,16 +1,14 @@
 import type { Metadata } from "next";
-import { MobileNav } from "@/components/mobile-nav";
 import { Shelf } from "@/components/shelf";
+import { pageMetadata } from "@/lib/site";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMetadata({
   title: "Library",
-};
+  description:
+    "Your shelf of graded readers in Japanese, Arabic, Italian, and Russian, chosen for your level and the words you already know.",
+  path: "/library",
+});
 
 export default function LibraryPage() {
-  return (
-    <main className="mx-auto flex min-h-full w-full max-w-[40rem] flex-col px-5 pb-28 pt-6 sm:px-8 sm:pt-7 lg:pb-24">
-      <Shelf />
-      <MobileNav current="/library" />
-    </main>
-  );
+  return <Shelf />;
 }

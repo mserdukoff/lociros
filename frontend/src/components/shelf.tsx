@@ -2,29 +2,20 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import { AppShell, PageHeading } from "@/components/app-shell";
 import { BandStrip } from "@/components/band";
 import { ContinueCard, datedSource, metaLine, sourceLine } from "@/components/continue-card";
 import { GenerateForm } from "@/components/generate-form";
-import { Segmented } from "@/components/segmented";
+import { LanguageSwitch, useAppLanguage, useMe } from "@/components/language-switch";
 import { Seal } from "@/components/seal";
 import { DemoBanner } from "@/components/demo-banner";
 import { AuthPanel } from "@/components/auth-panel";
 import { Art } from "@/components/landing/art";
-import { LogoMark } from "@/components/logo";
-import {
-  exportWords,
-  fetchLibrary,
-  fetchMe,
-  fetchReview,
-  pricingHref,
-  saveNews,
-  unstarWord,
-} from "@/lib/api";
+import { fetchLibrary, fetchReview, pricingHref, saveNews } from "@/lib/api";
 import { isDemo } from "@/lib/demo";
-import { hasStoredLanguage, loadLanguage, saveLanguage } from "@/lib/device";
+import { hasStoredLanguage, loadLanguage } from "@/lib/device";
 import {
-  enabledLanguages,
   isRtl,
   readingFont,
   type LangCode,
@@ -32,7 +23,6 @@ import {
   type LibraryResponse,
   type MeResponse,
   type NewsNotice,
-  type StarredWord,
 } from "@/lib/types";
 
 const LANG_NAME: Record<LangCode, string> = {
@@ -122,85 +112,39 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   return <p className="t-eyebrow">{children}</p>;
 }
 
-function WordsList({
-  words,
-  language,
-  onRemove,
-}: {
-  words: StarredWord[];
-  language: LangCode;
-  onRemove: (lemma: string) => void;
-}) {
-  const font = readingFont(language);
-  const rtl = isRtl(language);
-  if (words.length === 0) {
-    return (
-      <section id="words" className="scroll-mt-8 flex flex-col gap-3">
-        <SectionLabel>Words</SectionLabel>
-        <p className="text-[15px] leading-relaxed text-ink/55">
-          No saved words yet. Tap a word while you read, then choose Save. It shows up here and in
-          review.
-        </p>
-      </section>
-    );
-  }
+/** Saved words and what is due, as two rows that open their own sections. */
+function WordsSummary({ count, due }: { count: number; due: number }) {
+  const row =
+    "group flex items-baseline justify-between gap-4 px-5 py-4 transition-colors hover:bg-paper";
   return (
-    <section id="words" className="scroll-mt-8 flex flex-col gap-3">
+    <section className="flex flex-col gap-3">
       <SectionLabel>Words</SectionLabel>
-      <ul className="sheet flex flex-col divide-y divide-rule/70 overflow-hidden">
-        {words.map((word) => (
-          <li key={word.lemma} className="flex items-start justify-between gap-4 px-5 py-3">
-            <div className="min-w-0">
-              <p className="flex flex-wrap items-baseline gap-x-2.5">
-                <span dir={rtl ? "rtl" : undefined} className={`text-[1.0625rem] text-ink ${font}`}>{word.lemma}</span>
-                {word.gloss ? <span className="text-sm text-ink/55">{word.gloss}</span> : null}
-              </p>
-              {word.passage_id && word.title ? (
-                <Link
-                  href={`/passage/${word.passage_id}`}
-                  dir={rtl ? "rtl" : undefined}
-                  className={`mt-0.5 block text-[13px] text-ink/40 transition-colors hover:text-ink ${font}`}
-                >
-                  {word.title}
-                </Link>
-              ) : null}
-            </div>
-            <button
-              type="button"
-              onClick={() => onRemove(word.lemma)}
-              className="t-quiet shrink-0 underline decoration-ink/15 underline-offset-4"
-            >
-              Remove
-            </button>
+      {count === 0 && due === 0 ? (
+        <p className="text-[15px] leading-relaxed text-ink/55">
+          No saved words yet. Tap a word while you read, then choose Save. It shows up in Words
+          and in Review.
+        </p>
+      ) : (
+        <ul className="sheet flex flex-col divide-y divide-rule/70 overflow-hidden">
+          <li>
+            <Link href="/words" className={row}>
+              <span className="tnum text-[1.0625rem] text-ink">
+                {count === 1 ? "1 saved word" : `${count} saved words`}
+              </span>
+              <span className="t-quiet group-hover:text-ink">Words →</span>
+            </Link>
           </li>
-        ))}
-      </ul>
-      {isDemo() ? null : <WordsExport language={language} />}
+          {due > 0 ? (
+            <li>
+              <Link href="/review" className={`${row} bg-sage-wash`}>
+                <span className="tnum text-[1.0625rem] text-ink">{due} due for review</span>
+                <span className="t-quiet group-hover:text-ink">Review →</span>
+              </Link>
+            </li>
+          ) : null}
+        </ul>
+      )}
     </section>
-  );
-}
-
-function WordsExport({ language }: { language: LangCode }) {
-  const [error, setError] = useState<string | null>(null);
-  const download = (format: "csv" | "apkg") => {
-    setError(null);
-    exportWords(language, format).catch((err: unknown) => {
-      setError(err instanceof Error ? err.message : "Export failed.");
-    });
-  };
-  const linkClass = "underline decoration-ink/20 underline-offset-4 hover:text-ink";
-  return (
-    <p className="t-quiet">
-      Export{" "}
-      <button type="button" onClick={() => download("csv")} className={linkClass}>
-        CSV
-      </button>
-      {" · "}
-      <button type="button" onClick={() => download("apkg")} className={linkClass}>
-        Anki pack
-      </button>
-      {error ? <span className="ml-2 text-terracotta">{error}</span> : null}
-    </p>
   );
 }
 
@@ -237,76 +181,32 @@ function ShelfRow({ item }: { item: LibraryItem }) {
 
 export function Shelf() {
   const router = useRouter();
-  const [language, setLanguage] = useState<LangCode>("ja");
-  const [library, setLibrary] = useState<LibraryResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { me, loaded, refresh: refreshMe } = useMe();
+  const { language, languages, choose } = useAppLanguage(me);
+  const [data, setData] = useState<{ library: LibraryResponse; due: number } | null>(null);
+  const [failed, setFailed] = useState<{ language: LangCode; message: string } | null>(null);
   const [restockOpen, setRestockOpen] = useState(false);
-  const [me, setMe] = useState<MeResponse | null>(null);
-  const [due, setDue] = useState(0);
   const [savingNews, setSavingNews] = useState(false);
-  const showRussian = me?.show_russian === true;
-  const showItalian = me?.show_italian === true;
-  const showArabic = me?.show_arabic === true;
+  const [newsError, setNewsError] = useState<string | null>(null);
+  const library = data?.library.language === language ? data.library : null;
+  const due = library ? (data?.due ?? 0) : 0;
+  const error = failed?.language === language ? failed.message : newsError;
+  const loading = !library && !error;
 
   useEffect(() => {
-    if (!me) return;
-    const saved = loadLanguage();
-    if (saved === "ru" && showRussian) {
-      setLanguage("ru");
-      return;
-    }
-    if (saved === "it" && showItalian) {
-      setLanguage("it");
-      return;
-    }
-    if (saved === "ar" && showArabic) {
-      setLanguage("ar");
-      return;
-    }
-    if (
-      (language === "ru" && !showRussian) ||
-      (language === "it" && !showItalian) ||
-      (language === "ar" && !showArabic)
-    ) {
-      setLanguage("ja");
-      saveLanguage("ja");
-    }
-  }, [me, showRussian, showItalian, showArabic, language]);
-
-  const refreshMe = useCallback(() => {
-    void fetchMe()
-      .then(setMe)
-      .catch(() => setMe(null));
-  }, []);
-
-  useEffect(() => {
-    refreshMe();
-  }, [refreshMe]);
-
-  const load = useCallback(
-    async (lang: LangCode, signal?: AbortSignal) => {
-      const requested =
-        (!showRussian && lang === "ru") ||
-        (!showItalian && lang === "it") ||
-        (!showArabic && lang === "ar")
-          ? "ja"
-          : lang;
-      setLoading(true);
-      setError(null);
-      try {
-        const data = await fetchLibrary(requested, signal);
-        if (signal?.aborted) return;
-        setLibrary(data);
-      } catch (err) {
-        if (signal?.aborted) return;
-        setError(err instanceof Error ? err.message : "Could not load the shelf.");
-      } finally {
-        if (!signal?.aborted) setLoading(false);
-      }
-    },
-    [showRussian, showItalian, showArabic],
-  );
+    if (!loaded) return;
+    const ac = new AbortController();
+    Promise.all([
+      fetchLibrary(language, ac.signal),
+      fetchReview(language).catch(() => ({ due: 0 })),
+    ])
+      .then(([next, review]) => setData({ library: next, due: review.due }))
+      .catch((err: unknown) => {
+        if (ac.signal.aborted) return;
+        setFailed({ language, message: err instanceof Error ? err.message : "Could not load the shelf." });
+      });
+    return () => ac.abort();
+  }, [language, loaded]);
 
   useEffect(() => {
     if (library?.placed !== false) return;
@@ -318,56 +218,34 @@ export function Shelf() {
     router.replace(`/placement?language=${library.language}`);
   }, [library, router]);
 
-  useEffect(() => {
-    const ac = new AbortController();
-    void load(language, ac.signal);
-    void fetchReview(language)
-      .then((data) => setDue(data.due))
-      .catch(() => setDue(0));
-    return () => ac.abort();
-  }, [language, load]);
-
-  function onLanguage(next: LangCode) {
-    setLanguage(next);
-    saveLanguage(next);
-  }
-
   async function onSaveNews() {
     const notice = library?.news_notice;
     if (!notice || savingNews) return;
     setSavingNews(true);
+    setNewsError(null);
     try {
       const result = await saveNews({
         passage_id: notice.passage_id,
         language,
         saved: !notice.saved,
       });
-      setLibrary((prev) =>
-        prev?.news_notice
-          ? { ...prev, news_notice: { ...prev.news_notice, saved: result.saved } }
+      setData((prev) =>
+        prev?.library.news_notice
+          ? {
+              ...prev,
+              library: { ...prev.library, news_notice: { ...prev.library.news_notice, saved: result.saved } },
+            }
           : prev,
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save today's passage.");
+      setNewsError(err instanceof Error ? err.message : "Could not save today's passage.");
     } finally {
       setSavingNews(false);
     }
   }
 
-  async function onRemoveWord(lemma: string) {
-    try {
-      await unstarWord(lemma, language);
-      setLibrary((prev) =>
-        prev ? { ...prev, words: (prev.words ?? []).filter((w) => w.lemma !== lemma) } : prev,
-      );
-    } catch {
-      /* keep the list */
-    }
-  }
-
   const nextItem = library?.items.find((item) => item.id === library.next_id) ?? null;
   const rest = (library?.items ?? []).filter((item) => item.id !== library?.next_id);
-  const langs = enabledLanguages(me);
   const langName = LANG_NAME[language];
 
   function openRestock() {
@@ -385,28 +263,12 @@ export function Shelf() {
     );
 
   return (
+    <AppShell
+      current="/library"
+      language={language}
+      actions={<LanguageSwitch value={language} languages={languages} onChange={choose} />}
+    >
     <div className="flex flex-col gap-12">
-      <header className="flex flex-col items-start gap-3 border-b border-rule/70 pb-5 sm:flex-row sm:items-center sm:justify-between">
-        <Link
-          href="/"
-          className="flex shrink-0 items-center gap-2 font-display text-[1.375rem] font-medium tracking-[-0.02em] text-ink"
-        >
-          <LogoMark className="h-[2.05em] w-auto shrink-0" />
-          Lociros
-        </Link>
-        {langs.length > 1 ? (
-          <div className="w-full sm:w-auto">
-            <Segmented
-              ariaLabel="Language"
-              size="sm"
-              options={langs.map((l) => ({ id: l.id, label: l.label, hint: l.native }))}
-              value={language}
-              onChange={onLanguage}
-            />
-          </div>
-        ) : null}
-      </header>
-
       <DemoBanner />
 
       <section>
@@ -415,36 +277,33 @@ export function Shelf() {
           src={`vista-${language}`}
           className="vista-fade -mt-6 mb-3 ml-auto h-[8.5rem] w-full object-cover object-[right_62%] sm:h-[10.5rem]"
         />
-        <p className="t-eyebrow">{langName} · Library</p>
-        {library ? (
-          library.placed === false ? (
-            <h1 className="t-heading mt-4 text-[2rem] text-ink/40 sm:text-[2.5rem]">
-              Opening a short passage…
-            </h1>
-          ) : (
-            <>
-              <h1 className="t-heading mt-4 text-[2rem] text-ink sm:text-[2.5rem]">
-                Your {langName} is at {library.placement}.
-              </h1>
-              <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-3">
-                <BandStrip level={library.placement} />
-                <p className="tnum text-[13px] text-ink/50">
-                  {library.seen_lemmas > 0
-                    ? `${library.seen_lemmas} lemmas seen.`
-                    : "Rate a passage to move it."}{" "}
-                  Three ratings in a row move the band.
-                </p>
-              </div>
-            </>
-          )
+        {library && library.placed !== false ? (
+          <>
+            <PageHeading eyebrow={`${langName} · Library`}>
+              Your {langName} is at {library.placement}.
+            </PageHeading>
+            <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-3">
+              <BandStrip level={library.placement} />
+              <p className="tnum text-[13px] text-ink/50">
+                {library.seen_lemmas > 0
+                  ? `${library.seen_lemmas} lemmas seen.`
+                  : "Rate a passage to move it."}{" "}
+                Three ratings in a row move the band.
+              </p>
+            </div>
+          </>
         ) : (
-          <h1 className="t-heading mt-4 text-[2rem] text-ink/40 sm:text-[2.5rem]">
-            {loading ? "Opening the shelf…" : `Your ${langName} shelf.`}
-          </h1>
+          <PageHeading eyebrow={`${langName} · Library`} muted>
+            {library
+              ? "Opening a short passage…"
+              : loading
+                ? "Opening the shelf…"
+                : `Your ${langName} shelf.`}
+          </PageHeading>
         )}
       </section>
 
-      {!isDemo() ? <AuthPanel me={me} onRefresh={refreshMe} /> : null}
+      {!isDemo() && !me?.authenticated ? <AuthPanel me={me} onRefresh={refreshMe} /> : null}
 
       {!isDemo() ? <PlanNotice me={me} /> : null}
 
@@ -465,18 +324,8 @@ export function Shelf() {
         </section>
       ) : null}
 
-      {due > 0 ? (
-        <Link
-          href="/review"
-          className="group sheet flex items-baseline justify-between gap-4 bg-sage-wash px-5 py-4 transition-colors hover:bg-paper-raised"
-        >
-          <span className="tnum text-[1.0625rem] text-ink">{due} saved words due for review</span>
-          <span className="t-quiet group-hover:text-ink">Review →</span>
-        </Link>
-      ) : null}
-
       {library && library.placed !== false ? (
-        <WordsList words={library.words ?? []} language={language} onRemove={onRemoveWord} />
+        <WordsSummary count={library.words?.length ?? 0} due={due} />
       ) : null}
 
       {rest.length > 0 ? (
@@ -493,15 +342,10 @@ export function Shelf() {
       <section id="restock" className="scroll-mt-8 flex flex-col gap-3">
         <SectionLabel>{isDemo() ? "This demo" : "Restock"}</SectionLabel>
         {isDemo() ? (
-          <div className="flex flex-col gap-3">
-            <p className="max-w-[26rem] text-[15px] leading-relaxed text-ink/60">
-              This shelf is a fixed starter set. Rate a passage to move your placement in this
-              browser. Custom generation needs the full app.
-            </p>
-            <Link href="/review" className="t-quiet self-start">
-              Review saved words
-            </Link>
-          </div>
+          <p className="max-w-[26rem] text-[15px] leading-relaxed text-ink/60">
+            This shelf is a fixed starter set. Rate a passage to move your placement in this
+            browser. Custom generation needs the full app.
+          </p>
         ) : restockOpen ? (
           <>
             <p className="max-w-[26rem] text-[15px] leading-relaxed text-ink/60">
@@ -518,18 +362,12 @@ export function Shelf() {
             </button>
           </>
         ) : (
-          <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
-            <button type="button" onClick={openRestock} className="t-quiet text-ink">
-              Restock the shelf →
-            </button>
-            {due === 0 ? (
-              <Link href="/review" className="t-quiet">
-                Review saved words
-              </Link>
-            ) : null}
-          </div>
+          <button type="button" onClick={openRestock} className="t-quiet self-start text-ink">
+            Restock the shelf →
+          </button>
         )}
       </section>
     </div>
+    </AppShell>
   );
 }

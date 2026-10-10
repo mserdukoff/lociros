@@ -49,6 +49,27 @@ def test_shelf_counts_only_counts_passages_a_reader_can_open():
     library._counts_cache = None
 
 
+def test_public_catalog_lists_the_same_passages_as_the_counts():
+    library._catalog_cache = None
+    db = _session()
+    db.add_all(
+        [
+            _passage("a", "ja"),
+            _passage("b", "ja", genre="story"),
+            _passage("c", "ja", passed=False),
+            _passage("d", "ja", genre="news"),
+            _passage("e", "ja", status=SHELF_QUARANTINE),
+            _passage("f", "it"),
+        ]
+    )
+    db.commit()
+    items = library.public_catalog(db)
+    assert sorted(item["id"] for item in items) == ["a", "b", "f"]
+    assert set(items[0]) >= {"id", "language", "level", "title", "created_at"}
+    assert "text" not in items[0]
+    library._catalog_cache = None
+
+
 def _tok(text, lemma, pos, is_word=True):
     return {"text": text, "lemma": lemma, "is_word": is_word, "morph": {"pos": pos, "lemma": lemma or text}}
 

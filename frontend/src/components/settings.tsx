@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import { AppShell, PageHeading } from "@/components/app-shell";
 import { AuthPanel, signOutAccount } from "@/components/auth-panel";
+import { useMe } from "@/components/language-switch";
 import {
   deleteAccount,
   exportAccount,
-  fetchMe,
   openBillingPortal,
   pricingHref,
   updateProfile,
@@ -19,8 +20,10 @@ import {
   saveFadeKnown,
   saveFurigana,
   saveGrammarColors,
+  useStoredLanguage,
 } from "@/lib/device";
 import { CONTACT_EMAIL } from "@/lib/contact";
+import { isDemo } from "@/lib/demo";
 import { createClient } from "@/lib/supabase/client";
 import { isSupabaseAuth } from "@/lib/supabase/env";
 import type { Entitlement, MeResponse } from "@/lib/types";
@@ -315,9 +318,9 @@ function DataSection({ me }: { me: MeResponse }) {
       <p className="text-[15px] leading-relaxed text-ink/70">
         Download everything Lociros keeps about {me.authenticated ? "your account" : "this browser"}:
         levels, saved words, review cards, reading history, and ratings, as one JSON file. Saved
-        words also export to CSV or Anki from the{" "}
-        <Link href="/library#words" className="underline decoration-ink/25 underline-offset-2">
-          library
+        words also export to CSV or Anki from{" "}
+        <Link href="/words" className="underline decoration-ink/25 underline-offset-2">
+          Words
         </Link>
         .
       </p>
@@ -409,33 +412,19 @@ function DangerZone() {
 
 export function Settings() {
   const router = useRouter();
-  const [me, setMe] = useState<MeResponse | null>(null);
-  const [loaded, setLoaded] = useState(false);
-
-  const refresh = useCallback(() => {
-    void fetchMe()
-      .then(setMe)
-      .catch(() => setMe(null))
-      .finally(() => setLoaded(true));
-  }, []);
-
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
+  const { me, loaded, refresh, setMe } = useMe();
+  const language = useStoredLanguage();
 
   return (
+    <AppShell current="/settings" language={language}>
     <div className="flex flex-col gap-10">
       <header>
-        <Link href="/library" className="t-quiet">
-          ← Library
-        </Link>
-        <p className="t-eyebrow mt-10">Lociros</p>
-        <h1 className="t-heading mt-4 text-[2rem] text-ink sm:text-[2.5rem]">Settings</h1>
+        <PageHeading eyebrow="Lociros">Settings</PageHeading>
       </header>
 
       {!loaded ? <p className="text-ink/45">One moment…</p> : null}
 
-      {loaded && me && !me.authenticated ? (
+      {loaded && me && !me.authenticated && !isDemo() ? (
         <Section title="Account">
           <AuthPanel me={me} layout="dialog" onRefresh={refresh} />
         </Section>
@@ -474,5 +463,6 @@ export function Settings() {
         <Link href="/terms" className="underline decoration-ink/25 underline-offset-2">terms</Link>.
       </p>
     </div>
+    </AppShell>
   );
 }

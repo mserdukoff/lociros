@@ -2,10 +2,14 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { LegalHeading, LegalPage, Mail } from "@/components/legal";
 import { CONTACT_EMAIL } from "@/lib/contact";
+import { pageMetadata } from "@/lib/site";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMetadata({
   title: "Privacy",
-};
+  description:
+    "What Lociros keeps, why, who helps run it, and how to see or delete it. No data sales, no advertising, no third-party tracking cookies.",
+  path: "/privacy",
+});
 
 const PROCESSORS: { name: string; what: string }[] = [
   { name: "Supabase", what: "sign-in (email and password) and the database that holds your progress" },

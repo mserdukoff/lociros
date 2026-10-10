@@ -1,13 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { AuthPanel } from "@/components/auth-panel";
 import { Art } from "@/components/landing/art";
 import { fetchMe, startCheckout, track, type Plan } from "@/lib/api";
 import { INCLUDED, PLANS, TRIAL_DAYS, safeNext } from "@/lib/plans";
 import type { MeResponse } from "@/lib/types";
+
+const noSubscribe = () => () => {};
 
 function formatDate(iso: string | null | undefined): string | null {
   if (!iso) return null;
@@ -47,7 +49,10 @@ const FAQ: { q: string; a: React.ReactNode }[] = [
 
 export function Pricing() {
   const router = useRouter();
-  const params = useSearchParams();
+  // Not useSearchParams: that would leave the prerendered page empty until
+  // the client takes over.
+  const search = useSyncExternalStore(noSubscribe, () => window.location.search, () => "");
+  const params = new URLSearchParams(search);
   const next = safeNext(params.get("next"));
   const canceled = params.get("canceled") === "1";
   const [me, setMe] = useState<MeResponse | null>(null);
@@ -112,7 +117,7 @@ export function Pricing() {
       <Art src="hills-strip" className="-mb-4 ml-auto mt-2 w-[18rem] opacity-80" />
       <p className="t-eyebrow mt-10">Lociros · Plans</p>
       <h1 className="t-heading mt-4 text-[2rem] text-ink sm:text-[2.5rem]">
-        {loaded ? heading : "One moment…"}
+        {heading}
       </h1>
       <p className="mt-3 max-w-[32rem] text-[1.0625rem] leading-relaxed text-ink/65">{lede}</p>
 

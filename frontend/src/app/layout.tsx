@@ -1,8 +1,8 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Caveat, Literata, Noto_Naskh_Arabic, Outfit } from "next/font/google";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { AuthBridge } from "@/components/auth-bridge";
-import { SITE_DESCRIPTION, SITE_URL } from "@/lib/site";
+import { SITE_DESCRIPTION, SITE_NAME, SITE_TITLE, SITE_URL } from "@/lib/site";
 import "./globals.css";
 
 const outfit = Outfit({
@@ -34,27 +34,48 @@ const caveat = Caveat({
   display: "swap",
 });
 
+export const viewport: Viewport = {
+  themeColor: "#f4efe6",
+};
+
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: "Lociros — graded readers",
+    default: SITE_TITLE,
     template: "%s · Lociros",
   },
   description: SITE_DESCRIPTION,
-  applicationName: "Lociros",
+  applicationName: SITE_NAME,
+  category: "education",
+  keywords: [
+    "graded readers",
+    "CEFR reading",
+    "Japanese graded readers",
+    "Arabic graded readers",
+    "Italian graded readers",
+    "Russian graded readers",
+    "extensive reading",
+    "language learning",
+  ],
   openGraph: {
     type: "website",
-    siteName: "Lociros",
-    title: "Lociros — graded readers",
+    siteName: SITE_NAME,
+    title: SITE_TITLE,
     description: SITE_DESCRIPTION,
-    url: "/",
     locale: "en_US",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Lociros — graded readers",
+    title: SITE_TITLE,
     description: SITE_DESCRIPTION,
   },
+  verification: {
+    google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION || undefined,
+    other: process.env.NEXT_PUBLIC_BING_SITE_VERIFICATION
+      ? { "msvalidate.01": process.env.NEXT_PUBLIC_BING_SITE_VERIFICATION }
+      : undefined,
+  },
+  formatDetection: { telephone: false, email: false, address: false },
   manifest: "/manifest.json",
   icons: {
     icon: [

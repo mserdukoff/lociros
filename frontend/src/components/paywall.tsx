@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { AppShell } from "@/components/app-shell";
 import { AuthPanel } from "@/components/auth-panel";
 import { Art } from "@/components/landing/art";
 import { fetchMe, pricingHref, track, type PaywallCode } from "@/lib/api";
@@ -28,8 +29,8 @@ export function Paywall({ code, next }: { code: PaywallCode; next: string }) {
   const signup = code === "signup_required" && !me?.authenticated;
 
   return (
-    <main className="mx-auto flex min-h-full w-full max-w-[36rem] flex-col px-5 pb-24 pt-8 sm:px-8 sm:pt-10">
-      <Link href="/library" className="t-quiet">
+    <AppShell current="/library">
+      <Link href="/library" className="t-quiet self-start">
         ← Library
       </Link>
       <Art src="hills-strip" className="-mb-4 ml-auto mt-2 w-[16rem] opacity-80" />
@@ -68,6 +69,6 @@ export function Paywall({ code, next }: { code: PaywallCode; next: string }) {
           </div>
         </>
       )}
-    </main>
+    </AppShell>
   );
 }

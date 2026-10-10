@@ -3,10 +3,14 @@ import Link from "next/link";
 import { LegalHeading, LegalPage, Mail } from "@/components/legal";
 import { CONTACT_EMAIL } from "@/lib/contact";
 import { TRIAL_DAYS } from "@/lib/plans";
+import { pageMetadata } from "@/lib/site";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMetadata({
   title: "Terms",
-};
+  description:
+    "The terms for using Lociros: accounts, the free week, subscriptions, cancellation, refunds, and fair use.",
+  path: "/terms",
+});
 
 export default function TermsPage() {
   return (

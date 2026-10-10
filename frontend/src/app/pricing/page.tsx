@@ -1,17 +1,16 @@
 import type { Metadata } from "next";
-import { Suspense } from "react";
 import { Pricing } from "@/components/pricing";
+import { PLANS, TRIAL_DAYS } from "@/lib/plans";
+import { pageMetadata } from "@/lib/site";
 
-export const metadata: Metadata = {
-  title: "Plans",
-  description:
-    "Lociros graded readers: a free week, then monthly or annual. Cancel any time from Settings.",
-};
+const [monthly, annual] = PLANS;
+
+export const metadata: Metadata = pageMetadata({
+  title: "Plans and pricing",
+  description: `Lociros graded readers: ${TRIAL_DAYS} days free, no card needed. Then ${monthly.price} ${monthly.per} or ${annual.price} ${annual.per}. Cancel any time from Settings.`,
+  path: "/pricing",
+});
 
 export default function PricingPage() {
-  return (
-    <Suspense fallback={null}>
-      <Pricing />
-    </Suspense>
-  );
+  return <Pricing />;
 }

@@ -78,7 +78,7 @@ from app.services.learner import (
     tokens_from_row,
     unstar_lemma,
 )
-from app.services.library import list_library, shelf_counts
+from app.services.library import list_library, public_catalog, shelf_counts
 from app.services.news import save_news
 from app.services.morph import analyze_word
 from app.services.quota import consume_generate, remaining_generates
@@ -381,16 +381,26 @@ def get_generate_job(
     return job_to_response(db, job)
 
 
-@router.get("/shelf/counts")
-def get_shelf_counts(db: Session = Depends(get_db)):
-    counts = shelf_counts(db)
-    shown = {
+def _shown_languages() -> dict[str, bool]:
+    return {
         "ja": True,
         "ru": settings.show_russian,
         "it": settings.show_italian,
         "ar": settings.show_arabic,
     }
+
+
+@router.get("/shelf/counts")
+def get_shelf_counts(db: Session = Depends(get_db)):
+    counts = shelf_counts(db)
+    shown = _shown_languages()
     return {"counts": {lang: n for lang, n in counts.items() if shown.get(lang)}}
+
+
+@router.get("/catalog")
+def get_catalog(db: Session = Depends(get_db)):
+    shown = _shown_languages()
+    return {"items": [item for item in public_catalog(db) if shown.get(item["language"])]}
 
 
 @router.get("/library", response_model=LibraryResponse)
