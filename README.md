@@ -100,7 +100,7 @@ On first backend start, Lociros writes a hand-authored starter library (and Engl
 | Italian  | 2  | 2  | 1  | 0  |
 | Arabic   | 2  | 2  | 1  | 0  |
 
-A Japanese catalog of 160 more authored texts (`catalog_ja.py`) is seeded alongside. Generated texts that pass calibration are stored with these and appear on the same shelf.
+A Japanese catalog of 32 more authored texts (`catalog_ja.py`) is seeded alongside. Generated texts that pass calibration are stored with these and appear on the same shelf.
 
 ---
 

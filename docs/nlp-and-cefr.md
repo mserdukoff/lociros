@@ -49,7 +49,7 @@ Warnings that can land on the passage:
 - Corrective rewrite failed; returning the first draft.
 - Library text still has out-of-level flags. (seed path only; those rows are quarantined unless they pass)
 
-Authored seed texts skip the LLM and skip LLM gloss fill (`use_llm_gloss=False`). They still run morph + lexicon + validator. Failed seed rows are deleted and rewritten on the next boot; passed rows are left in place (translation backfilled if missing). A Japanese starter catalog of 160 authored texts (50 A1, 57 A2, 33 B1, 20 B2, including 10 series chapters) is seeded from `catalog_ja.py`.
+Authored seed texts skip the LLM and skip LLM gloss fill (`use_llm_gloss=False`). They still run morph + lexicon + validator. Failed seed rows are deleted and rewritten on the next boot; passed rows are left in place (translation backfilled if missing). A Japanese starter catalog of 32 authored texts (1 A1, 18 A2, 9 B1, 4 B2, including 10 series chapters) is seeded from `catalog_ja.py`. It holds one passage per template: noun-swapped copies of the same frame read as duplicates, and `tests/test_catalog.py` rejects numbered titles and repeated text.
 
 ### Genre hints (prompt only)
 

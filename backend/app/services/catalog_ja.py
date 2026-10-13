@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""Precomputed Japanese catalog: templated A1–B2 texts plus multi-chapter series."""
+"""Precomputed Japanese catalog: hand-written A1–B2 texts plus multi-chapter series."""
 
 from sqlalchemy.orm import Session
 
@@ -139,48 +139,42 @@ def _b2(title: str, topic: str, text: str, en: str, genre: str = "news") -> dict
 
 
 def _a1_bank() -> list[dict]:
-    items: list[dict] = []
-    n = 0
-    for person, p_en in PEOPLE:
-        for place, pl_en in PLACES:
-            for food, f_en in FOODS[:4]:
-                if n >= 50:
-                    return items
-                thing, t_en = THINGS[n % len(THINGS)]
-                adj, a_en = ADJ[n % len(ADJ)]
-                day = DAYS[n % 2]
-                title = f"{person}と{place}{n + 1}"
-                text = (
-                    f"{person}は学生です。{day}は休みです。"
-                    f"{person}は{place}にいます。ここは{place}です。"
-                    f"これは{food}です。{food}は{adj}です。"
-                    f"{person}は{food}を食べます。水を飲みます。"
-                    f"それは{thing}です。{thing}はここです。"
-                    f"{person}は本を読みます。本は{adj}です。"
-                    f"母は家にいます。母は元気です。"
-                    f"今日はいいです。{place}はきれいです。"
-                )
-                en = _en(
-                    f"{p_en} is a student",
-                    f"{DAY_EN[day]} is a day off",
-                    f"{p_en} is at {pl_en}",
-                    f"This is {pl_en}",
-                    f"This is {f_en}",
-                    f"The {_bare(f_en)} is {a_en}",
-                    f"{p_en} eats {f_en}",
-                    f"{p_en} drinks water",
-                    f"That is {t_en}",
-                    f"The {_bare(t_en)} is here",
-                    f"{p_en} reads a book",
-                    f"The book is {a_en}",
-                    "Mother is at home",
-                    "Mother is well",
-                    "Today is good",
-                    f"{_place_subj(pl_en)} is clean",
-                )
-                items.append(_a1(title, f"{p_en.lower()} at {pl_en}", text, en))
-                n += 1
-    return items
+    # One passage per template: swapping nouns into the same frame reads as a duplicate.
+    person, p_en = PEOPLE[0]
+    place, pl_en = PLACES[0]
+    food, f_en = FOODS[0]
+    thing, t_en = THINGS[0]
+    adj, a_en = ADJ[0]
+    day = DAYS[0]
+    text = (
+        f"{person}は学生です。{day}は休みです。"
+        f"{person}は{place}にいます。ここは{place}です。"
+        f"これは{food}です。{food}は{adj}です。"
+        f"{person}は{food}を食べます。水を飲みます。"
+        f"それは{thing}です。{thing}はここです。"
+        f"{person}は本を読みます。本は{adj}です。"
+        f"母は家にいます。母は元気です。"
+        f"今日はいいです。{place}はきれいです。"
+    )
+    en = _en(
+        f"{p_en} is a student",
+        f"{DAY_EN[day]} is a day off",
+        f"{p_en} is at {pl_en}",
+        f"This is {pl_en}",
+        f"This is {f_en}",
+        f"The {_bare(f_en)} is {a_en}",
+        f"{p_en} eats {f_en}",
+        f"{p_en} drinks water",
+        f"That is {t_en}",
+        f"The {_bare(t_en)} is here",
+        f"{p_en} reads a book",
+        f"The book is {a_en}",
+        "Mother is at home",
+        "Mother is well",
+        "Today is good",
+        f"{_place_subj(pl_en)} is clean",
+    )
+    return [_a1(f"{person}と{place}", f"{p_en.lower()} at {pl_en}", text, en)]
 
 
 def _a2_bank() -> list[dict]:
@@ -373,61 +367,31 @@ def _a2_bank() -> list[dict]:
         ),
     ]
     items: list[dict] = []
-    for i, (title, topic, genre, text, en) in enumerate(scenes):
+    for title, topic, genre, text, en in scenes:
         items.append(_a2(title, topic, text, en, genre))
-        # variants with a distinct title so the catalog reaches 50 A2 texts
-        ja_var = text.replace("昨日、", "おととい、").replace("今朝", "きのうの朝")
-        en_var = (
-            en.replace("Yesterday I", "The day before yesterday I")
-            .replace("Yesterday ", "The day before yesterday ")
-            .replace("It rained this morning", "It rained yesterday morning")
-            .replace("This morning", "Yesterday morning")
-            .replace("this morning", "yesterday morning")
+    items.append(
+        _a2(
+            "川の近くの午後",
+            "walked near the river",
+            "午後、私は川の近くを歩きました。それからパンを食べました。"
+            "水を飲みました。少し休みました。本を読みました。"
+            "六時に家へ帰りました。母はキッチンにいました。"
+            "今日の話をしました。夜、お茶を飲みました。早く寝ました。",
+            _en(
+                "In the afternoon I walked near the river",
+                "Then I ate bread",
+                "I drank water",
+                "I rested a little",
+                "I read a book",
+                "I went home at six",
+                "Mother was in the kitchen",
+                "I talked about today",
+                "At night I drank tea",
+                "I went to bed early",
+            ),
         )
-        items.append(
-            _a2(
-                f"{title}の続き",
-                topic + " continued",
-                ja_var,
-                en_var,
-                genre,
-            )
-        )
-    # fill remaining A2 with structured て/た narratives
-    verbs = [
-        ("図書館へ行きました", "went to the library"),
-        ("店で靴を買いました", "bought shoes at the shop"),
-        ("公園で写真を撮りました", "took photos in the park"),
-        ("駅で友達を待ちました", "waited for a friend at the station"),
-        ("川の近くを歩きました", "walked near the river"),
-    ]
-    idx = 0
-    while len(items) < 50:
-        v, v_en = verbs[idx % len(verbs)]
-        person, p_en = PEOPLE[idx % len(PEOPLE)]
-        food, f_en = FOODS[idx % len(FOODS)]
-        title = f"午後の{idx + 1}"
-        text = (
-            f"午後、{person}は{v}。それから{food}を食べました。"
-            f"水を飲みました。少し休みました。本を読みました。"
-            f"六時に家へ帰りました。母はキッチンにいました。"
-            f"今日の話をしました。夜、お茶を飲みました。早く寝ました。"
-        )
-        en = _en(
-            f"In the afternoon {p_en} {v_en}",
-            f"Then they ate {f_en}",
-            f"{p_en} drank water",
-            f"{p_en} rested a little",
-            f"{p_en} read a book",
-            f"{p_en} went home at six",
-            "Mother was in the kitchen",
-            f"{p_en} talked about today",
-            "At night they drank tea",
-            f"{p_en} went to bed early",
-        )
-        items.append(_a2(title, v_en, text, en))
-        idx += 1
-    return items[:50]
+    )
+    return items
 
 
 def _b1_bank() -> list[dict]:
@@ -500,64 +464,27 @@ def _b1_bank() -> list[dict]:
         ),
     ]
     items = [_b1(t, topic, text, en, "daily_life") for t, topic, text, en in stories]
-    extras = [
-        (
-            "図書館で調べています。資料を読めば、答えがわかります。終わったら報告します。",
-            (
+    items.append(
+        _b1(
+            "図書館の日記",
+            "journal",
+            "今日はいい天気です。図書館で調べています。資料を読めば、答えがわかります。"
+            "終わったら報告します。夕方、母と話しています。もし時間があったら、明日も続けます。"
+            "夜は早く寝ます。朝が早いからです。",
+            _en(
+                "Today the weather is good",
                 "I am looking things up at the library",
                 "If I read the materials, I will understand the answer",
                 "When I finish, I will report",
+                "In the evening I am talking with my mother",
+                "If I have time, I will continue tomorrow too",
+                "I go to bed early at night",
+                "That is because morning is early",
             ),
-        ),
-        (
-            "会社で新しい仕事を習っています。わからないところは先輩が教えてくれます。",
-            (
-                "I am learning a new job at the company",
-                "When I do not understand, a senior colleague teaches me",
-            ),
-        ),
-        (
-            "夜、日記を書いています。書けば書くほど、気持ちが楽になります。",
-            (
-                "At night I am writing in a diary",
-                "The more I write, the easier I feel",
-            ),
-        ),
-        (
-            "雨が止んだら、走りに行きます。走っていると、頭がすっきりします。",
-            (
-                "When the rain stops, I will go running",
-                "When I am running, my head feels clear",
-            ),
-        ),
-        (
-            "友達が旅行の写真を見せてくれました。行けたら、来年一緒に行きます。",
-            (
-                "A friend showed me travel photos",
-                "If I can go, we will go together next year",
-            ),
-        ),
-    ]
-    i = 0
-    while len(items) < 30:
-        body, body_en = extras[i % len(extras)]
-        title = f"日記{i + 1}"
-        text = (
-            f"今日はいい天気です。{body}"
-            f"夕方、母と話しています。もし時間があったら、明日も続けます。"
-            f"夜は早く寝ます。朝が早いからです。"
+            "daily_life",
         )
-        en = _en(
-            "Today the weather is good",
-            *body_en,
-            "In the evening I am talking with my mother",
-            "If I have time, I will continue tomorrow too",
-            "I go to bed early at night",
-            "That is because morning is early",
-        )
-        items.append(_b1(title, "journal", text, en, "daily_life"))
-        i += 1
-    return items[:30]
+    )
+    return items
 
 
 def _b2_bank() -> list[dict]:
@@ -600,30 +527,23 @@ def _b2_bank() -> list[dict]:
         ),
     ]
     items = [_b2(t, topic, text, en) for t, topic, text, en in articles]
-    i = 0
-    while len(items) < 20:
-        title = f"短い記事{i + 1}"
-        text = (
+    items.append(
+        _b2(
+            "新しい規則",
+            "a local rule",
             "新しい規則が来月から導入される。説明会が開かれ、質問も受け付けられた。"
             "反対する人もいれば、支持する人もいる。最終的な判断は、公開された資料を読んでから下されるべきだ。"
-            "町の未来は、静かな議論の中で決まっていく。"
+            "町の未来は、静かな議論の中で決まっていく。",
+            _en(
+                "A new rule will be introduced next month",
+                "An information meeting was held, and questions were also accepted",
+                "Some people oppose it, and some people support it",
+                "The final decision should be made after reading the published materials",
+                "The town's future is decided through quiet discussion",
+            ),
         )
-        items.append(
-            _b2(
-                title,
-                "a local rule",
-                text,
-                _en(
-                    "A new rule will be introduced next month",
-                    "An information meeting was held, and questions were also accepted",
-                    "Some people oppose it, and some people support it",
-                    "The final decision should be made after reading the published materials",
-                    "The town's future is decided through quiet discussion",
-                ),
-            )
-        )
-        i += 1
-    return items[:20]
+    )
+    return items
 
 
 def _series() -> list[dict]:
