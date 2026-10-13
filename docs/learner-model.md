@@ -24,7 +24,11 @@ Reads and lemmas are written only in `complete_read` (the **Too easy / Just righ
 
 ## Placement
 
-A new learner has no row yet. **Start reading** on the landing page opens a two-step onboarding dialog: pick a language, then pick a starting point. **Place me with a short read** (recommended) opens `/placement?language=`. **I know my level** or **I'm just starting** (A1) saves the band with `POST /api/placement/choose` and opens the first passage. A shelf with no band still sends the learner to one short passage and four questions (`GET`/`POST /api/placement`) before it states a band. The result opens `next_id` at the new band rather than the shelf. The score sets the band: 0–1 correct is A1, 2 is A2, 3 is B1, 4 is B2. Languages stay on separate rows.
+A new learner has no row yet. **Start reading** on the landing page opens a two-step onboarding dialog: pick a language, then pick a starting point. **Place me with a few short reads** (recommended) opens `/placement?language=`. **I know my level** or **I'm just starting** (A1) saves the band with `POST /api/placement/choose` and opens the first passage. A shelf with no band still sends the learner to the placement ladder (`GET`/`POST /api/placement`) before it states a band.
+
+The ladder has one plain-text passage per band, A1 to B2, with four questions each; 3 of 4 is a pass. A first placement starts at A1 and climbs until a miss, and the band is the last one passed (A1 if A1 is missed). The result opens `next_id` at the new band rather than the shelf. Languages stay on separate rows.
+
+After 30 days with no reads, taps, or band changes in a language, the library returns `recheck_from` (the current band). The shelf offers a ladder that starts there: a pass climbs, a miss descends until a pass. **Keep** (`POST /api/placement/keep`) restarts the clock instead. A finished read counts as placed, so a reader who skipped the quiz is offered the re-check too.
 
 After that, `too_easy` and `too_hard` still move the band, but only after three ratings in a row in the same direction (`PLACEMENT_STREAK`). `just_right` clears the streak and keeps the band. All three ingest lemmas, mark the passage read, and pick next.
 

@@ -74,6 +74,54 @@ def test_too_easy_raises_placement_after_three_signals():
     assert unread.recycled_lemmas >= 1
 
 
+def test_reader_placed_by_reading_alone_gets_a_recheck():
+    from datetime import timedelta
+
+    from app.models.db import LearnerReadRow, LearnerRow
+
+    db = _session()
+    passage = save_authored_passage(
+        db,
+        language="ja",
+        level="A2",
+        topic="home",
+        genre="daily_life",
+        title="私の朝",
+        text="私は学生です。これは本です。",
+    )
+    complete_read(db, passage.id, "just_right", "test-device-9")
+    learner = db.query(LearnerRow).filter_by(device_id="test-device-9", language="ja").one()
+    assert learner.placed == 1
+    old = datetime.now(timezone.utc) - timedelta(days=45)
+    learner.updated_at = old
+    db.query(LearnerReadRow).filter_by(device_id="test-device-9").update({"created_at": old})
+    db.commit()
+    assert list_library(db, "ja", "test-device-9").recheck_from == "A2"
+
+
+def test_learner_create_race_keeps_pending_rows(monkeypatch):
+    from app.models.db import FeedbackRow, LearnerRow
+    from app.services import learner as learner_mod
+
+    db = _session()
+    db.add(LearnerRow(device_id="race-device-1", language="ja", level="A2", consecutive_up=0, consecutive_down=0))
+    db.commit()
+    db.add(FeedbackRow(passage_id="p1", rating="too_easy", device_id="race-device-1"))
+
+    real = learner_mod.get_learner
+    calls = {"n": 0}
+
+    def stale_then_real(*args, **kwargs):
+        calls["n"] += 1
+        return None if calls["n"] == 1 else real(*args, **kwargs)
+
+    monkeypatch.setattr(learner_mod, "get_learner", stale_then_real)
+    row = learner_mod.get_or_create_learner(db, "race-device-1", "ja")
+    db.commit()
+    assert row.level == "A2"
+    assert db.query(FeedbackRow).count() == 1
+
+
 def test_pick_next_skips_read_at_same_level():
     db = _session()
     a = save_authored_passage(

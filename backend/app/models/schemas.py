@@ -8,12 +8,14 @@ CefrLevel = Literal["A1", "A2", "B1", "B2"]
 LangCode = Literal["ru", "ja", "it", "ar"]
 FeedbackRating = Literal["too_easy", "too_hard", "just_right"]
 GENRES = ("daily_life", "travel", "news", "folklore", "work")
+# News passages come only from the wire builder, never from a reader's request.
+ReaderGenre = Literal["daily_life", "travel", "folklore", "work"]
 
 
 class GenerateRequest(BaseModel):
     level: CefrLevel
     topic: str = Field(..., min_length=1, max_length=200)
-    genre: str | None = Field(default=None, max_length=40)
+    genre: ReaderGenre | None = None
     language: LangCode = "ja"
 
 

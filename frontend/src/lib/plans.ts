@@ -23,6 +23,9 @@ export const PLANS: { id: Plan; label: string; price: string; per: string; note:
 
 export const TRIAL_DAYS = Number(process.env.NEXT_PUBLIC_TRIAL_DAYS || 7);
 
+/** "free week" only when the trial really is seven days. */
+export const TRIAL_NAME = TRIAL_DAYS === 7 ? "free week" : `${TRIAL_DAYS}-day trial`;
+
 export const INCLUDED = [
   "Every graded passage on the shelf, in every language, at your band",
   "Tap any word for its lemma, grammar, and a gloss",

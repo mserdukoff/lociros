@@ -14,6 +14,9 @@ API_REPLICAS="${API_REPLICAS:-2}"
 # connection while waiting, so every replica runs them and a rolling deploy never
 # pauses generation. Replica 1 also runs the daily news scheduler and seeding.
 GENERATE_WORKERS="${GENERATE_WORKERS:-4}"
+# Steady state is ~1.1 GB per replica; the cap stops one runaway from taking the box.
+API_MEMORY="${API_MEMORY:-1800m}"
+API_MEMORY_SWAP="${API_MEMORY_SWAP:-2600m}"
 BIND="${BIND:-127.0.0.1}"
 NETWORK=lociros
 REDIS_NAME=lociros-redis
@@ -96,6 +99,10 @@ if [ "$(docker inspect -f '{{.State.Running}}' "$REDIS_NAME" 2>/dev/null)" != "t
     redis-server --save "" --appendonly no --maxmemory 64mb --maxmemory-policy allkeys-lru >/dev/null
 fi
 
+# If a replica fails to come up, do not leave it marked down: nginx's max_fails
+# routes around a dead backend, and the next deploy should start from full capacity.
+trap 'rc=$?; [ "$rc" -ne 0 ] && write_upstream; exit "$rc"' EXIT
+
 # Highest replica first: a replica that does not exist yet starts while the
 # lower ones keep serving, so scaling 1 -> 2 never leaves nginx with no backend.
 i="$API_REPLICAS"
@@ -120,6 +127,8 @@ while [ "$i" -ge 1 ]; do
     --network "$NETWORK" \
     --restart unless-stopped \
     --stop-timeout 40 \
+    --memory "$API_MEMORY" \
+    --memory-swap "$API_MEMORY_SWAP" \
     --env-file "$ENV_FILE" \
     -e APP_ENV=production \
     -e WEB_CONCURRENCY=1 \

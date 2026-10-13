@@ -6,7 +6,7 @@ import { pageMetadata } from "@/lib/site";
 export const metadata: Metadata = pageMetadata({
   title: "Find your reading level",
   description:
-    "One short passage places you on the CEFR scale, A1 to B2, in Japanese, Arabic, Italian, or Russian. No account needed.",
+    "A few short passages, each a little harder, place you on the CEFR scale from A1 to B2 in Japanese, Arabic, Italian, or Russian. No account needed.",
   path: "/placement",
 });
 

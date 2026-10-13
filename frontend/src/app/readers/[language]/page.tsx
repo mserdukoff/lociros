@@ -115,7 +115,7 @@ export default async function ReadersPage({ params }: Props) {
           Find your level
         </Link>
         <Link href="/pricing" className="t-quiet">
-          Plans and the free week
+          Plans and the free trial
         </Link>
       </div>
 

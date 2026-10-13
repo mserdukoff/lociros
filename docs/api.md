@@ -34,16 +34,16 @@ CORS: `CORS_ORIGINS` (default localhost:3000). `PUBLIC_BASE_URL` is always inclu
 | `POST` | `/billing/checkout` | `{ plan: "monthly"\|"annual", return_to? }` + Bearer | `{ url }` for Stripe Checkout. If more than two days of the free week remain, the first charge waits until it ends. 503 if Stripe is not configured. Rate limited |
 | `POST` | `/billing/portal` | Bearer | `{ url }` for the Stripe customer portal. 400 if the account never subscribed |
 | `POST` | `/billing/webhook` | raw Stripe event + `Stripe-Signature` | `{ ok }`. Verified against `STRIPE_WEBHOOK_SECRET`; each event id is applied once |
-| `POST` | `/auth/session` | Bearer (required) + `X-Device-Id` | Merges this browser's guest rows into the signed-in user; records `account_linked` |
+| `POST` | `/auth/session` | Bearer (required) + `X-Device-Id` | Merges this browser's guest rows into the signed-in user; records `account_linked`. Guest data untouched for 30 days is left alone. Rate limited |
 | `POST` | `/auth/logout` | | Clears the legacy FastAPI cookie. Supabase sign-out happens in the browser |
 | `GET` | `/auth/google`, `/auth/google/callback` | | Legacy Google cookie sign-in. **404 in production** |
 | `POST` | `/auth/magic` | `{ email }` | Legacy magic link. Returns `{ ok, link }` (no email is sent). **404 in production** |
 | `GET` | `/auth/magic/callback?token=` | | Consumes a magic link once, sets the cookie, redirects to `/library`. **404 in production** |
-| `POST` | `/generate` | `{ level, topic, genre?, language }` + identity | **200** cached `PassageResponse`, or **202** `GenerateJobResponse`. Rate limited |
+| `POST` | `/generate` | `{ level, topic, genre?, language }` + identity | **200** cached `PassageResponse`, or **202** `GenerateJobResponse`. `genre` is `daily_life`, `travel`, `folklore`, or `work` (news is built by the server only). Rate limited |
 | `GET` | `/generate/{job_id}` | identity that created the job | `GenerateJobResponse` — poll until `completed` or `failed`. 404 for other callers |
 | `GET` | `/library?language=ja\|ru\|it\|ar` | `X-Device-Id` | `LibraryResponse`. With an identity, also schedules today's news passage for that band |
 | `GET` | `/shelf/counts` | | `{ counts: { ja: n, … } }`: passages a reader can open (public, passed calibration, not news), public languages only. Cached ten minutes in-process. The landing page's proof line |
-| `POST` | `/events` | `{ kind, passage_id?, payload? }` + `X-Device-Id` | `{ "ok": true }`. Browser-side funnel events: `landing_view`, `demo_tap`, `start_click`, `placement_start`, `session_start`, `paywall_view`. **400** for the kinds the API records itself (`placement_done`, `read_complete`, `account_linked`, `comprehension`, `trial_start`, `checkout_start`, `subscribed`, `churned`). `payload` is capped at 2 KB of JSON. Rate limited |
+| `POST` | `/events` | `{ kind, passage_id?, payload? }` + `X-Device-Id` | `{ "ok": true }`. Browser-side funnel events: `landing_view`, `demo_tap`, `start_click`, `placement_start`, `session_start`, `paywall_view`. **400** for the kinds the API records itself (`placement_done`, `read_complete`, `account_linked`, `comprehension`, `trial_start`, `checkout_start`, `subscribed`, `churned`), and for any other unknown kind. `payload` is capped at 2 KB of JSON. Rate limited |
 | `GET` | `/admin/overview` | Bearer (admin) | `AdminOverview`: API status, totals, last 7 days, funnel, revenue (`trial.billing`), top model usage (`llm_usage`), counts, recent users with their plan, and recent jobs. Read by the admin app at `admin.lociros.com` |
 | `GET` | `/trial/metrics?days=30` | Bearer (admin) | Trial gates plus `funnel`: per-step devices and rates against landing views, 2- and 7-day returns, and `sticky_test` arms |
 | `GET` | `/placement?language=ja\|ru\|it\|ar&level=A1\|A2\|B1\|B2` | | `{ language, level, title, text, questions }`: one rung of the placement ladder (default `A1`) as plain text (no tokens, glosses, or grammar) and its four questions, without the answer key |
@@ -51,13 +51,13 @@ CORS: `CORS_ORIGINS` (default localhost:3000). `PUBLIC_BASE_URL` is always inclu
 | `POST` | `/placement/keep` | `{ language }` + identity | `{ ok, level }`. Keeps the current band after a long break and clears `recheck_from`. 404 before any placement |
 | `POST` | `/placement/choose` | `{ language, level }` + identity | Skips the read: the reader names their band (`A1`–`B2`) in onboarding. Same response with `correct` and `total` at `0`. 400 without an identity |
 | `POST` | `/news/save` | `{ passage_id, language, saved }` + identity | `{ ok, saved }`. Saves or unsaves today's news passage |
-| `POST` | `/taps` | `{ lemma, language, passage_id? }` + `X-Device-Id` | `{ "ok": true }` (ignored without an identity) |
-| `POST` | `/comprehension` | `{ passage_id, answers }` + `X-Device-Id` | `{ ok, correct, total, detail }`. `detail` is one boolean per question. 400 unless every question is answered |
+| `POST` | `/taps` | `{ lemma, language, passage_id? }` + `X-Device-Id` | `{ "ok": true }` (ignored without an identity). Rate limited |
+| `POST` | `/comprehension` | `{ passage_id, answers }` + `X-Device-Id` | `{ ok, correct, total }`. The score only, so the answer key never reaches the browser. 400 unless every question is answered. Rate limited |
 | `GET` | `/passages/{id}` | `?lab=1` for admins | `PassageResponse`. Quarantined passages are 404 unless `lab=1` is sent by a signed-in admin |
 | `GET` | `/passages/{id}/translation` | identity | `{ passage_id, translation }`. Rate limited |
 | `GET` | `/passages/{id}/stats` | `X-Device-Id` | `PassageStats` |
 | `POST` | `/gloss` | `{ word, passage_id? }` | `GlossResponse`. Rate limited |
-| `POST` | `/feedback` | `{ passage_id, rating }` + `X-Device-Id` | `FeedbackResponse` |
+| `POST` | `/feedback` | `{ passage_id, rating }` + `X-Device-Id` | `FeedbackResponse`. The first finished read also marks the language as placed. Rate limited |
 | `GET` | `/words?language=ja\|ru\|it\|ar` | `X-Device-Id` | `StarredWord[]` (`[]` without an identity) |
 | `POST` | `/words` | `{ lemma, gloss?, passage_id?, language? }` + identity | `StarredWord`. Also creates or refreshes the SM-2 review card |
 | `DELETE` | `/words` | `{ lemma, language }` + identity | `{ "ok": true }` |

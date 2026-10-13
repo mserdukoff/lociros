@@ -1,7 +1,7 @@
 {
   "name": "Lociros",
   "short_name": "Lociros",
-  "start_url": "/library",
+  "start_url": "/",
   "display": "standalone",
   "background_color": "#f4efe6",
   "theme_color": "#1c2538",

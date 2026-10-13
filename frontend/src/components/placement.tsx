@@ -62,7 +62,7 @@ function LanguageStep({
         ))}
       </div>
       <button type="button" onClick={() => onChoose(pick)} className="btn-primary mt-8">
-        Start reading
+        Start placement
       </button>
     </section>
   );
@@ -82,6 +82,7 @@ export function PlacementReadView() {
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<PlacementResult | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -125,17 +126,19 @@ export function PlacementReadView() {
         track("placement_start", { language, start });
       })
       .catch((err: unknown) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Could not open the placement read.");
+        if (!cancelled) setError(err instanceof Error ? err.message : "Could not open the placement.");
       });
     return () => {
       cancelled = true;
     };
-  }, [language, choosing, start]);
+  }, [language, choosing, start, attempt]);
 
   function onChoose(next: LangCode) {
     saveLanguage(next);
     setLanguage(next);
     setChoosing(false);
+    // A re-check belongs to the language it was offered for; a refresh must not bring it back.
+    router.replace(`/placement?language=${next}`);
   }
 
   async function onSubmit() {
@@ -171,9 +174,9 @@ export function PlacementReadView() {
 
   return (
     <div className="relative min-h-full overflow-x-clip lg:pl-[13.5rem]">
-      <AppRail language={language ?? undefined} current="/library" />
+      <AppRail language={language ?? undefined} />
     <div className="mx-auto flex min-h-full w-full max-w-[42rem] flex-col px-5 pb-28 pt-7 sm:px-8 sm:pt-9 lg:pb-24">
-      <MobileNav current="/library" />
+      <MobileNav />
       <header className="flex items-center justify-between gap-4">
         <Link
           href="/"
@@ -250,7 +253,16 @@ export function PlacementReadView() {
             </>
           )}
 
-          {error ? <p className="mt-6 text-sm text-terracotta">{error}</p> : null}
+          {error ? (
+            <div className="mt-6 flex items-baseline gap-4">
+              <p className="text-sm text-terracotta">{error}</p>
+              {!read ? (
+                <button type="button" onClick={() => setAttempt((n) => n + 1)} className="t-quiet underline underline-offset-4">
+                  Try again
+                </button>
+              ) : null}
+            </div>
+          ) : null}
 
           {read && !result ? (
             <>
@@ -273,13 +285,16 @@ export function PlacementReadView() {
                 <ol className="flex flex-col gap-6">
                   {read.questions.map((question, qIndex) => (
                     <li key={question.id}>
-                      <p className="text-[15px] leading-relaxed text-ink">{question.prompt}</p>
-                      <div className="mt-3 flex flex-col gap-2">
+                      <p id={`q-${question.id}`} className="text-[15px] leading-relaxed text-ink">
+                        {question.prompt}
+                      </p>
+                      <div role="radiogroup" aria-labelledby={`q-${question.id}`} className="mt-3 flex flex-col gap-2">
                         {question.choices.map((choice, cIndex) => (
                           <button
                             key={choice}
                             type="button"
-                            aria-pressed={picks[qIndex] === cIndex}
+                            role="radio"
+                            aria-checked={picks[qIndex] === cIndex}
                             onClick={() =>
                               setPicks((prev) => prev.map((value, index) => (index === qIndex ? cIndex : value)))
                             }

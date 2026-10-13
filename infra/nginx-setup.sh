@@ -99,8 +99,15 @@ systemctl enable nginx
 systemctl reload nginx 2>/dev/null || systemctl restart nginx
 
 # certbot adds the 443 server and redirect to the file we just wrote (reusing
-# an existing certificate); the certbot systemd timer renews and reloads nginx.
+# an existing certificate); the certbot systemd timer renews it.
 certbot --nginx -d "$DOMAIN" -m "$EMAIL" --agree-tos --non-interactive --redirect --keep-until-expiring
+# Reload after every renewal so nginx never keeps serving the old certificate.
+mkdir -p /etc/letsencrypt/renewal-hooks/deploy
+cat > /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh <<'HOOK'
+#!/bin/sh
+nginx -t -q && systemctl reload nginx
+HOOK
+chmod 755 /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
 nginx -t
 systemctl reload nginx
 

@@ -14,8 +14,8 @@ type Path = "place" | "known" | "new";
 const PATHS: { id: Path; title: string; body: string }[] = [
   {
     id: "place",
-    title: "Place me with a short read",
-    body: "About two minutes. Read one passage, answer four questions, and Lociros sets your level.",
+    title: "Place me with a few short reads",
+    body: "A few minutes. Each passage is a little harder, with four questions after it. Lociros stops when the reading gets too hard and sets your level.",
   },
   {
     id: "known",
@@ -196,7 +196,7 @@ function Onboarding({
         disabled={busy}
         className="btn-primary mt-6 h-11 w-full text-[15px]"
       >
-        {busy ? "One moment…" : path === "place" ? "Start the placement read" : "Start reading"}
+        {busy ? "One moment…" : path === "place" ? "Start the placement" : "Start reading"}
       </button>
       <button
         type="button"

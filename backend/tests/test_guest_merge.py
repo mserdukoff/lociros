@@ -75,6 +75,27 @@ def test_new_rows_move_and_duplicates_drop(db):
     assert lemmas == ["犬", "猫"]
 
 
+def test_stale_guest_rows_are_not_merged(db):
+    from datetime import datetime, timedelta, timezone
+
+    uid = _user(db)
+    _learner(db, "laptop-0000001", "B2", 1)
+    old = datetime.now(timezone.utc) - timedelta(days=90)
+    db.query(LearnerRow).update({"updated_at": old})
+    db.commit()
+
+    merge_guest_into_user(db, "laptop-0000001", uid)
+
+    assert get_learner(db, Identity(user_id=uid, device_id=None), "ja") is None
+
+
+def test_reserved_device_ids_are_refused():
+    from app.services.identity import valid_device_id
+
+    assert valid_device_id("user-42") is None
+    assert valid_device_id("user-abc12345") == "user-abc12345"
+
+
 def test_signed_out_browser_does_not_see_merged_rows(db):
     uid = _user(db)
     _learner(db, "laptop-0000001", "B2", 1)

@@ -125,7 +125,7 @@ def test_process_job_completes(monkeypatch, db):
     assert row.passage_id == "passage-1"
 
 
-def test_job_owned_by_device_or_user(db):
+def test_account_job_answers_only_to_the_account(db):
     job = GenerationJobRow(
         id="j1",
         status=STATUS_PENDING,
@@ -137,5 +137,21 @@ def test_job_owned_by_device_or_user(db):
         user_id=7,
     )
     assert job_owned_by(job, Identity(user_id=7, device_id=None))
+    assert not job_owned_by(job, Identity(user_id=None, device_id="device-abc12345"))
+    assert not job_owned_by(job, Identity(user_id=99, device_id="device-abc12345"))
+
+
+def test_guest_job_belongs_to_its_device(db):
+    job = GenerationJobRow(
+        id="j2",
+        status=STATUS_PENDING,
+        level="A2",
+        topic="t",
+        genre=None,
+        language="ja",
+        device_id="device-abc12345",
+        user_id=None,
+    )
     assert job_owned_by(job, Identity(user_id=None, device_id="device-abc12345"))
-    assert not job_owned_by(job, Identity(user_id=99, device_id="other-device9"))
+    assert job_owned_by(job, Identity(user_id=7, device_id="device-abc12345"))
+    assert not job_owned_by(job, Identity(user_id=None, device_id="other-device9"))

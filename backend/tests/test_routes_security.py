@@ -175,6 +175,48 @@ def test_events_are_rate_limited(client):
     assert codes[60] == 429
 
 
+def test_unknown_event_kinds_are_refused(client):
+    res = client.post("/api/events", json={"kind": "made_up"}, headers=DEVICE)
+    assert res.status_code == 400
+
+
+def test_readers_cannot_request_news_passages(client):
+    body = {"level": "A2", "topic": "rain", "language": "ja", "genre": "news"}
+    assert client.post("/api/generate", json=body, headers=DEVICE).status_code == 422
+
+
+def test_comprehension_does_not_return_the_key(client, db):
+    import json
+
+    row = _persist(
+        db,
+        language="ja",
+        level="A1",
+        topic="quiz",
+        genre="daily_life",
+        title="本",
+        text="私は学生です。",
+        tokens=[],
+        calibration=Calibration(
+            passed=True,
+            attempts=1,
+            overlevel_lemma_rate=0,
+            subordinate_rate=0,
+            forbidden_case_rate=0,
+            forbidden_tense_rate=0,
+            forbidden_pos_rate=0,
+            flags=[],
+            warnings=[],
+        ),
+        comprehension_json=json.dumps(
+            [{"id": "q1", "prompt": "Who?", "choices": ["a", "b", "c"], "answer_index": 1}]
+        ),
+    )
+    res = client.post("/api/comprehension", json={"passage_id": row.id, "answers": [0]}, headers=DEVICE)
+    assert res.status_code == 200
+    assert set(res.json()) == {"ok", "correct", "total"}
+
+
 def test_placement_choose_sets_level(client):
     body = {"language": "ja", "level": "B1"}
     assert client.post("/api/placement/choose", json=body).status_code == 400

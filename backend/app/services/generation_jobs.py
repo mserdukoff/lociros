@@ -334,11 +334,10 @@ def stop_workers() -> None:
 
 
 def job_owned_by(job: GenerationJobRow, identity: Identity) -> bool:
-    if identity.user_id is not None and job.user_id == identity.user_id:
-        return True
-    if identity.device_id and job.device_id == identity.device_id:
-        return True
-    return False
+    # An account's job answers only to that account, never to the browser id it was queued from.
+    if job.user_id is not None:
+        return identity.user_id is not None and job.user_id == identity.user_id
+    return bool(identity.device_id) and job.device_id == identity.device_id
 
 
 def job_to_response(db: Session, job: GenerationJobRow) -> GenerateJobResponse:

@@ -4,7 +4,8 @@ set -eu
 cd /app/backend
 python -c "from app.models.db import wait_for_db; wait_for_db()"
 
-WORKERS="${WEB_CONCURRENCY:-2}"
+# Each worker runs its own lifespan (generation threads, optional news), so scale with replicas instead.
+WORKERS="${WEB_CONCURRENCY:-1}"
 # Trust X-Forwarded-* only from the host (nginx) and Docker bridge networks.
 FORWARDED_ALLOW_IPS="${FORWARDED_ALLOW_IPS:-127.0.0.1,172.16.0.0/12}"
 # Keep-alive outlives nginx's upstream keepalive_timeout (60s) so nginx, not

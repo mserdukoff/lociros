@@ -21,8 +21,8 @@ Vercel  (Next.js)
                     ▼
 Lightsail instance
    nginx :443  (TLS, flood guard, least-conn load balancing)
-     ├─ lociros-api-1  127.0.0.1:8001   requests + generation threads + news scheduler
-     └─ lociros-api-2  127.0.0.1:8002   requests only
+     ├─ lociros-api-1  127.0.0.1:8001   requests + generation threads + news scheduler + seeding
+     └─ lociros-api-2  127.0.0.1:8002   requests + generation threads
    lociros-redis      (shared rate-limit windows and cooldowns)
                     │
                     └─ Supabase  (session pooler :5432)
@@ -69,11 +69,7 @@ Optional: turn off the **Data API**. FastAPI is the only client.
 
 First FastAPI start against this database no-ops `create_all`, stamps Alembic, and seeds the library. That can take several minutes. Confirm with `select count(*) from passages;`
 
-Startup never runs `alembic upgrade`. It creates missing tables and a fixed list of late columns, and stamps Alembic only on a database that has no `alembic_version` yet. When a release adds a migration that changes anything else (an index, a constraint, a data fix), apply it by hand before or after deploying, with `DATABASE_URL` pointing at Supabase:
-
-```bash
-cd backend && alembic upgrade head
-```
+Startup never runs `alembic upgrade`. It creates missing tables and a fixed list of late columns, and stamps Alembic only on a database that has no `alembic_version` yet. Migrations run in exactly one place: `scripts/deploy-api.sh` runs `alembic upgrade head` from the new image before any replica restarts (section 2d). Old replicas keep serving while it runs, so a migration must work with the previous release too: add columns and indexes first, drop them a release later. Take a Supabase backup (Database → Backups) before a migration that rewrites data.
 
 ---
 
@@ -145,7 +141,7 @@ Generate `JWT_SECRET` and `PROXY_SECRET` with `openssl rand -hex 32` (two differ
 
 `REQUIRE_AUTH` defaults to `true` when `APP_ENV=production`. It limits custom-passage generation to signed-in accounts. Without it, any browser can generate up to `GENERATE_MONTHLY_CAP` (default 10) passages a month per device id; device ids are client-chosen, so the per-IP rate limit is then the real ceiling. `ADMIN_EMAILS` empty means nobody can open admin routes.
 
-With `APP_ENV=production` the API also turns off `/docs` and `/openapi.json`, returns 404 for the legacy magic-link and Google cookie routes, and stops accepting the old HS256 tokens (`ALLOW_LEGACY_TOKENS`). Supabase Auth is the only sign-in. The paywall is on (`PAYWALL_ENABLED` defaults to true in production); see section 5 for Stripe.
+With `APP_ENV=production` the API also turns off `/docs` and `/openapi.json`, returns 404 for the legacy magic-link and Google cookie routes, and stops accepting the old HS256 tokens (`ALLOW_LEGACY_TOKENS`). Supabase Auth is the only sign-in. The paywall is requested by default in production (`PAYWALL_ENABLED`), but it is enforced only once `STRIPE_SECRET_KEY` and `STRIPE_PRICE_MONTHLY` are set, so an expired trial is never stuck in front of a checkout that cannot open. See section 5 for Stripe.
 
 ### 2d. Build the image on this Mac, load it on Lightsail
 
@@ -166,7 +162,9 @@ curl -fsS http://127.0.0.1:8002/api/health/ready
 # both include "db": true
 ```
 
-Later deploys from the Mac: `API_HOST=ubuntu@PUBLIC_IP sh scripts/deploy-api.sh` builds, ships, runs migrations, and restarts the replicas one at a time. Before each replica is replaced, nginx is told to stop sending it new requests; it finishes what it has (up to 30 s), the new container must pass `/api/health/ready`, and only then is the next replica touched. Users see no errors during a deploy. If a new replica fails its health check the script stops, leaving the others on the old image.
+Later deploys from the Mac (Docker Desktop must be running): `SSH_KEY=~/.ssh/lightsail-us-east-1.pem API_HOST=ubuntu@PUBLIC_IP sh scripts/deploy-api.sh` builds, ships, runs migrations, and restarts the replicas one at a time. Before each replica is replaced, nginx is told to stop sending it new requests; uvicorn finishes in-flight requests for up to 30 s (Docker allows 40 s before it kills the container), the new container must pass `/api/health/ready`, and only then is the next replica touched. Custom passages are queued jobs, so a restart never cuts one off mid-generation; the stopping replica hands unfinished jobs back to the queue. If a new replica fails its health check the script stops, leaving the others on the old image, and puts the failed replica back in nginx's rotation (nginx skips it while it is down). The script ends by checking `https://api.lociros.com/api/health/ready`.
+
+Each deploy tags the image with its git hash as well as `latest`, and the box keeps the last three. To go back: `SSH_KEY=… API_HOST=… sh scripts/rollback-api.sh` (the previous image) or add `TO=<hash>`. Rollback does not undo migrations. Each replica is capped at 1.8 GB of RAM (`API_MEMORY`) plus some swap.
 
 ### 2e. HTTPS and load balancing with nginx
 
@@ -324,7 +322,7 @@ Google sign-in (later): enable the Google provider in Supabase Auth. On Google C
 | `SUPABASE_SERVICE_ROLE_KEY` | Lets account deletion remove the Supabase login. Server-only |
 | `CONTACT_EMAIL` | Support address (default `hello@lociros.com`) |
 | `SENTRY_DSN` / `SENTRY_TRACES_SAMPLE_RATE` | Error reporting; traces default `0` |
-| `NEWS_SCHEDULER` | `true` (default): build daily news hourly in the background. `lightsail-run.sh` turns it on for replica 1 only |
+| `NEWS_SCHEDULER` | `false` (default). `true` builds daily news hourly in the background. `lightsail-run.sh` turns it on for replica 1 only |
 | `MAX_BODY_BYTES` | Request body cap, default `262144` |
 | `GENERATE_MONTHLY_CAP` | Custom passages per account or device per month (default `10`) |
 | `GENERATE_WORKERS` | Generation threads per replica, default `4` on every replica (set by `lightsail-run.sh`) |
@@ -416,14 +414,14 @@ On Vercel, set `NEXT_PUBLIC_DEMO=1` at **build** time and omit `NLP_BACKEND_URL`
 | `/api/*` returns 502 `Backend unavailable` | `NLP_BACKEND_URL` missing or FastAPI is down |
 | `Tenant or user not found` | Pooler username must be `postgres.PROJECT_REF` |
 | Connection timeout | Direct `db.*.supabase.co` on an IPv4-only host; use the session pooler |
-| Restock gives up with "taking too long" | Replica 1 (the only one with generation threads) is down, or the LLM is hanging. Pending jobs wait for it; nothing is lost. The client stops polling after three minutes; the API marks a job stuck in `running` for 10 minutes as failed |
+| Restock gives up with "taking too long" | Both replicas are down or busy, or the LLM is hanging. Every replica runs generation threads, and pending jobs wait in the queue; nothing is lost. The client stops polling after three minutes; the API marks a job stuck in `running` for 10 minutes as failed |
 | Restock returns 429 | Monthly cap, pending-job limit, or the per-minute rate limit |
 | Many unrelated users get 429 at once | `PROXY_SECRET` missing or different on Vercel and the box (or nginx not re-run after changing it), so everyone counts as Vercel's few addresses |
 | 502 from nginx | Every replica is down: `docker ps`, `docker logs lociros-api-1`. `/var/log/nginx/lociros.error.log` shows which upstream failed |
 | A replica restarts on its own | Out of memory: `docker inspect -f '{{.State.OOMKilled}}' lociros-api-2`, `free -m`. Check the swap file exists |
 | `max clients reached` / `too many connections` | Replicas × `DB_POOL_SIZE + DB_MAX_OVERFLOW` exceeds the Supabase pooler's pool size (section 2f) |
 | Admin dashboard says "Not configured" | `ADMIN_EMAIL` or the Supabase variables are missing on the admin project |
-| A new column or index is missing in production | A migration was not applied; run `alembic upgrade head` |
+| A new column or index is missing in production | The deploy stopped before migrations ran. Re-run `scripts/deploy-api.sh`; it migrates before restarting |
 | Checkout returns 503 "Billing is not set up" | `STRIPE_SECRET_KEY` or `STRIPE_PRICE_MONTHLY` missing on the API |
 | Paid but still paywalled | Webhook not reaching the API: check the endpoint URL, `STRIPE_WEBHOOK_SECRET`, and Stripe's delivery log |
 | Webhook returns 400 | Wrong signing secret, or something re-encoded the body before FastAPI |

@@ -340,11 +340,11 @@ def get_or_create_learner(
         consecutive_down=0,
         updated_at=datetime.now(timezone.utc),
     )
-    db.add(row)
     try:
-        db.flush()
+        # Savepoint: a concurrent create must not roll back the caller's pending rows.
+        with db.begin_nested():
+            db.add(row)
     except IntegrityError:
-        db.rollback()
         row = get_learner(db, ident, language)
         if row is None:
             raise

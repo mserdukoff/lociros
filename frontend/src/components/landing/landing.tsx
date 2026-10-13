@@ -3,6 +3,7 @@
 import { MotionConfig } from "motion/react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { signOutAccount } from "@/components/auth-panel";
 import { OnboardingDialog } from "@/components/onboarding-dialog";
@@ -429,6 +430,9 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
   const [returning, setReturning] = useState<Returning | null>(null);
   const [authMode, setAuthMode] = useState<AuthMode | null>(null);
   const [onboarding, setOnboarding] = useState(false);
+  const [pendingStart, setPendingStart] = useState(false);
+  const [deleted, setDeleted] = useState(false);
+  const router = useRouter();
   // Until /me answers, feature every language (all are public by default).
   // After that, only the ones the server shows, so nobody picks a language
   // whose shelf would fall back to Japanese.
@@ -516,7 +520,7 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
       title: "Rate, and move forward.",
       body: (
         <p>
-          Levels run from A1 through B2. One short read sets where you start. The shelf remembers
+          Levels run from A1 through B2. A few short reads, each a little harder, set where you start. The shelf remembers
           the words you have seen, and the next passage is chosen from that.
         </p>
       ),
@@ -537,9 +541,11 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
   /** New readers get the onboarding dialog; placed readers and accounts go straight to the shelf. */
   function begin(from: StartFrom, event: React.MouseEvent) {
     start(from);
-    if (!authReady || signedIn || returning) return;
+    if (signedIn || returning) return;
     event.preventDefault();
-    setOnboarding(true);
+    // Before /me answers we cannot tell a new reader from an account; decide when it does.
+    if (authReady) setOnboarding(true);
+    else setPendingStart(true);
   }
 
   const refreshMe = useCallback(() => {
@@ -550,8 +556,23 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
   }, []);
 
   useEffect(() => {
+    if (!pendingStart || !authReady) return;
+    setPendingStart(false);
+    if (signedIn) router.push("/library");
+    else setOnboarding(true);
+  }, [pendingStart, authReady, signedIn, router]);
+
+  useEffect(() => {
     refreshMe();
   }, [refreshMe]);
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("deleted") !== "1") return;
+    setDeleted(true);
+    url.searchParams.delete("deleted");
+    window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+  }, []);
 
   useEffect(() => {
     track("landing_view", {
@@ -687,6 +708,11 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
         <div className="pb-3 empty:hidden">
           <DemoBanner />
         </div>
+        {deleted ? (
+          <p role="status" className="mb-3 rounded-card bg-sage-wash px-4 py-3 text-sm text-ink/70">
+            Your account and its reading history were deleted.
+          </p>
+        ) : null}
       </Wrap>
 
       {/* Above the sections after it, so the hero's word gloss can hang over them. */}
@@ -789,7 +815,7 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
         >
           {[
             { icon: "list", text: "Every passage checked against its level" },
-            { icon: "book", text: "Four levels, A1 to B2, one short read to place you" },
+            { icon: "book", text: "Four levels, A1 to B2, a few short reads to place you" },
             { icon: "bookmark", text: "No account to start. Keep your shelf later." },
           ].map((fact, i) => (
             <li key={fact.icon} className="flex items-start gap-3 px-5 py-4 sm:px-6">
@@ -851,7 +877,7 @@ export function Landing({ variant = "classic" }: { variant?: LandingVariant }) {
               Rate, and move forward.
             </h2>
             <p className="mt-5 text-[1rem] leading-[1.65] text-ink/70">
-              Levels run from A1 through B2. One short read sets where you start. After each
+              Levels run from A1 through B2. A few short reads, each a little harder, set where you start. After each
               passage, say whether it was too easy, just right, or too hard. Three in a row move your
               level one step.
             </p>

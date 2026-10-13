@@ -87,6 +87,7 @@ from app.services.quota import consume_generate, remaining_generates
 from app.services.rate_limit import rate_limit
 from app.services.srs import due_cards, due_count, review_card
 from app.services.trial import (
+    CLIENT_EVENTS,
     SERVER_EVENTS,
     record_account_linked,
     record_event,
@@ -245,7 +246,7 @@ async def post_billing_webhook(request: Request, db: Session = Depends(get_db)):
     return {"ok": True, "applied": applied}
 
 
-@router.post("/auth/session")
+@router.post("/auth/session", dependencies=[Depends(rate_limit("auth_session", 10))])
 def auth_session(
     db: Session = Depends(get_db),
     identity: Identity = Depends(get_identity),
@@ -364,7 +365,10 @@ def post_generate(
     except HTTPException:
         raise
     except RuntimeError as e:
-        raise HTTPException(status_code=503, detail=str(e)) from e
+        logger.error("generate unavailable: %s", e)
+        raise HTTPException(
+            status_code=503, detail="Generation is unavailable right now. Try again later."
+        ) from e
     payload = job_to_response(db, job)
     return JSONResponse(status_code=202, content=payload.model_dump(mode="json"))
 
@@ -560,7 +564,11 @@ def post_gloss(body: GlossRequest, db: Session = Depends(get_db)):
     )
 
 
-@router.post("/feedback", response_model=FeedbackResponse)
+@router.post(
+    "/feedback",
+    response_model=FeedbackResponse,
+    dependencies=[Depends(rate_limit("feedback", 30))],
+)
 def post_feedback(
     body: FeedbackRequest,
     db: Session = Depends(get_db),
@@ -714,7 +722,11 @@ def get_placement(language: str = "ja", level: str = "A1"):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.post("/placement", response_model=PlacementResult)
+@router.post(
+    "/placement",
+    response_model=PlacementResult,
+    dependencies=[Depends(rate_limit("placement", 30))],
+)
 def post_placement(
     body: PlacementSubmit,
     db: Session = Depends(get_db),
@@ -780,7 +792,11 @@ def post_placement(
     )
 
 
-@router.post("/placement/choose", response_model=PlacementResult)
+@router.post(
+    "/placement/choose",
+    response_model=PlacementResult,
+    dependencies=[Depends(rate_limit("placement_choose", 10))],
+)
 def post_placement_choose(
     body: PlacementChoose,
     db: Session = Depends(get_db),
@@ -816,7 +832,7 @@ def post_placement_choose(
     )
 
 
-@router.post("/placement/keep")
+@router.post("/placement/keep", dependencies=[Depends(rate_limit("placement_keep", 10))])
 def post_placement_keep(
     body: PlacementKeep,
     db: Session = Depends(get_db),
@@ -851,7 +867,7 @@ def post_news_save(
     return {"ok": True, "saved": saved}
 
 
-@router.post("/taps")
+@router.post("/taps", dependencies=[Depends(rate_limit("taps", 240))])
 def post_tap(
     body: TapRequest,
     db: Session = Depends(get_db),
@@ -863,7 +879,7 @@ def post_tap(
     return {"ok": True}
 
 
-@router.post("/comprehension")
+@router.post("/comprehension", dependencies=[Depends(rate_limit("comprehension", 30))])
 def post_comprehension(
     body: ComprehensionSubmit,
     db: Session = Depends(get_db),
@@ -885,7 +901,7 @@ def post_comprehension(
         passage_id=body.passage_id,
         payload={"correct": sum(correct), "total": len(correct)},
     )
-    return {"ok": True, "correct": sum(correct), "total": len(correct), "detail": correct}
+    return {"ok": True, "correct": sum(correct), "total": len(correct)}
 
 
 @router.post("/events", dependencies=[Depends(rate_limit("events", 60))])
@@ -896,6 +912,8 @@ def post_event(
 ):
     if body.kind in SERVER_EVENTS:
         raise HTTPException(status_code=400, detail="That event is recorded by the server.")
+    if body.kind not in CLIENT_EVENTS:
+        raise HTTPException(status_code=400, detail="Unknown event.")
     if body.kind == "session_start" and not identity.device_id:
         return {"ok": True}
     record_event(

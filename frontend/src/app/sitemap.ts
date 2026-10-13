@@ -7,6 +7,7 @@ export const revalidate = 3600;
 
 const PAGES: { path: string; priority: number; changeFrequency: "weekly" | "monthly" | "yearly" }[] = [
   { path: "/", priority: 1, changeFrequency: "weekly" },
+  { path: "/placement", priority: 0.8, changeFrequency: "monthly" },
   { path: "/pricing", priority: 0.8, changeFrequency: "monthly" },
   { path: "/privacy", priority: 0.2, changeFrequency: "yearly" },
   { path: "/terms", priority: 0.2, changeFrequency: "yearly" },

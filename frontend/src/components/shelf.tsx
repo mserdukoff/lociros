@@ -14,7 +14,8 @@ import { AuthPanel } from "@/components/auth-panel";
 import { Art } from "@/components/landing/art";
 import { fetchLibrary, fetchReview, keepLevel, pricingHref, saveNews } from "@/lib/api";
 import { isDemo } from "@/lib/demo";
-import { hasStoredLanguage, loadLanguage } from "@/lib/device";
+import { TRIAL_NAME } from "@/lib/plans";
+import { hasStoredLanguage } from "@/lib/device";
 import {
   isRtl,
   readingFont,
@@ -133,12 +134,12 @@ function PlanNotice({ me }: { me: MeResponse | null }) {
   if (ent.status === "trial" && ent.trial_days_left !== null) {
     text =
       ent.trial_days_left <= 1
-        ? "Your free week ends today."
-        : `${ent.trial_days_left} days left in your free week.`;
+        ? `Your ${TRIAL_NAME} ends today.`
+        : `${ent.trial_days_left} days left in your ${TRIAL_NAME}.`;
   } else if (ent.status === "grace") {
     text = "Your last payment didn't go through. Update your card to keep the shelf open.";
   } else if (ent.status === "expired") {
-    text = "Your free week is over.";
+    text = `Your ${TRIAL_NAME} is over.`;
   }
   if (!text) return null;
   const href = ent.status === "grace" ? "/settings" : pricingHref("/library");
@@ -259,7 +260,6 @@ export function Shelf() {
       router.replace("/placement");
       return;
     }
-    if (library.language !== loadLanguage()) return;
     router.replace(`/placement?language=${library.language}`);
   }, [library, router]);
 
@@ -354,12 +354,20 @@ export function Shelf() {
         ) : (
           <PageHeading eyebrow={`${langName} · Library`} muted>
             {library
-              ? "Opening a short passage…"
+              ? "Opening the placement…"
               : loading
                 ? "Opening the shelf…"
                 : `Your ${langName} shelf.`}
           </PageHeading>
         )}
+        {library?.placed === false ? (
+          <Link
+            href={`/placement?language=${library.language}`}
+            className="mt-5 inline-block text-sm text-ink underline decoration-ink/30 underline-offset-4"
+          >
+            Find your level
+          </Link>
+        ) : null}
       </section>
 
       {!isDemo() && !me?.authenticated ? <AuthPanel me={me} onRefresh={refreshMe} /> : null}

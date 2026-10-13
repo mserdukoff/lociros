@@ -2,13 +2,13 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { LegalHeading, LegalPage, Mail } from "@/components/legal";
 import { CONTACT_EMAIL } from "@/lib/contact";
-import { TRIAL_DAYS } from "@/lib/plans";
+import { TRIAL_DAYS, TRIAL_NAME } from "@/lib/plans";
 import { pageMetadata } from "@/lib/site";
 
 export const metadata: Metadata = pageMetadata({
   title: "Terms",
   description:
-    "The terms for using Lociros: accounts, the free week, subscriptions, cancellation, refunds, and fair use.",
+    "The terms for using Lociros: accounts, the free trial, subscriptions, cancellation, refunds, and fair use.",
   path: "/terms",
 });
 
@@ -35,7 +35,7 @@ export default function TermsPage() {
         age of digital consent where you live if that is higher.
       </p>
 
-      <LegalHeading>Free week and subscriptions</LegalHeading>
+      <LegalHeading>Free trial and subscriptions</LegalHeading>
       <p>
         A new account gets {TRIAL_DAYS} days of full access with no card. After that, reading needs
         a paid subscription, billed monthly or yearly in advance through Stripe. Prices are shown on
@@ -47,7 +47,7 @@ export default function TermsPage() {
       </p>
       <p>
         Subscriptions renew automatically at the end of each period until you cancel. If you
-        subscribe during the free week, the first charge is taken when the week ends. We will tell
+        subscribe during the {TRIAL_NAME}, the first charge is taken when it ends. We will tell
         you at least 30 days ahead of any price change, and it applies from your next renewal.
       </p>
       <p>

@@ -7,7 +7,7 @@ import { AppShell } from "@/components/app-shell";
 import { AuthPanel } from "@/components/auth-panel";
 import { Art } from "@/components/landing/art";
 import { fetchMe, pricingHref, track, type PaywallCode } from "@/lib/api";
-import { TRIAL_DAYS } from "@/lib/plans";
+import { TRIAL_DAYS, TRIAL_NAME } from "@/lib/plans";
 import type { MeResponse } from "@/lib/types";
 
 /** Shown in place of a passage the reader cannot open yet. */
@@ -29,7 +29,7 @@ export function Paywall({ code, next }: { code: PaywallCode; next: string }) {
   const signup = code === "signup_required" && !me?.authenticated;
 
   return (
-    <AppShell current="/library">
+    <AppShell>
       <Link href="/library" className="t-quiet self-start">
         ← Library
       </Link>
@@ -40,7 +40,7 @@ export function Paywall({ code, next }: { code: PaywallCode; next: string }) {
           <h1 className="t-heading mt-4 text-[2rem] text-ink">Keep reading, free for {TRIAL_DAYS} days.</h1>
           <p className="mt-3 max-w-[28rem] text-[1.0625rem] leading-relaxed text-ink/65">
             You&apos;ve finished your first passage. Create an account to open the rest of the
-            shelf. No card needed for the free week. Your level and saved words come with you.
+            shelf. No card needed for the {TRIAL_NAME}. Your level and saved words come with you.
           </p>
           <div className="mt-8">
             <AuthPanel
@@ -55,7 +55,7 @@ export function Paywall({ code, next }: { code: PaywallCode; next: string }) {
         </>
       ) : (
         <>
-          <h1 className="t-heading mt-4 text-[2rem] text-ink">Your free week is over.</h1>
+          <h1 className="t-heading mt-4 text-[2rem] text-ink">Your {TRIAL_NAME} is over.</h1>
           <p className="mt-3 max-w-[28rem] text-[1.0625rem] leading-relaxed text-ink/65">
             Subscribe to keep reading. Your level, saved words, and review cards are all still here.
           </p>

@@ -113,7 +113,7 @@ export function AppShell({
   actions,
   children,
 }: {
-  current: AppSection;
+  current?: AppSection;
   language?: LangCode;
   actions?: React.ReactNode;
   children: React.ReactNode;

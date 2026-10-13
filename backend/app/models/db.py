@@ -7,6 +7,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -39,6 +40,9 @@ class Base(DeclarativeBase):
 
 class PassageRow(Base):
     __tablename__ = "passages"
+    __table_args__ = (
+        Index("ix_passages_language_shelf_created", "language", "shelf_status", "created_at"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     language: Mapped[str] = mapped_column(String(8), default="ru", index=True)
@@ -133,7 +137,17 @@ class MagicLinkRow(Base):
 
 class LearnerRow(Base):
     __tablename__ = "learners"
-    __table_args__ = (UniqueConstraint("device_id", "language"),)
+    __table_args__ = (
+        UniqueConstraint("device_id", "language"),
+        Index(
+            "ix_learners_user_language",
+            "user_id",
+            "language",
+            unique=True,
+            postgresql_where=text("user_id IS NOT NULL"),
+            sqlite_where=text("user_id IS NOT NULL"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     device_id: Mapped[str] = mapped_column(String(64), index=True)

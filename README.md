@@ -270,7 +270,7 @@ Per `(device_id, language)` Lociros keeps:
 | `learner_news_saves` | Saved daily news passages |
 | `feedback` | Raw too-easy / just-right / too-hard events |
 
-**Placement.** A placement read (four questions) sets the first band: 0–1 correct A1, 2 A2, 3 B1, 4 B2. After that, three `too_easy` ratings in a row move one step up (cap B2) and three `too_hard` in a row move one step down (floor A1). `just_right` keeps the band and clears the streak.
+**Placement.** A placement ladder sets the first band: one plain-text passage per band from A1, four questions each, climbing while the reader gets 3 of 4 right. The band is the last one passed. After 30 days away from a language, the shelf offers the ladder again, starting at the old band. After that, three `too_easy` ratings in a row move one step up (cap B2) and three `too_hard` in a row move one step down (floor A1). `just_right` keeps the band and clears the streak.
 
 **New vs. known.** Content POS only:
 
@@ -375,7 +375,9 @@ levla/
 │   ├── build_ar_lexicon.py         # Arabic vocab + gloss + roots
 │   ├── build_kanji.py              # KANJIDIC2 + KRADFILE + JLPT → ja.json
 │   ├── batch_catalog.py            # offline catalog generation + audio
-│   └── lightsail-run.sh            # run the API container on Lightsail
+│   ├── deploy-api.sh               # build, ship, migrate, rolling restart on Lightsail
+│   ├── rollback-api.sh             # put the previous API image back
+│   └── lightsail-run.sh            # Redis + API replicas on the Lightsail box
 ├── docs/
 └── docker-compose.yml
 ```
@@ -530,11 +532,11 @@ If the rewrite target is wrong you will see shelf errors; the Next server must b
 
 Production is **Vercel** (Next.js frontend and admin) + **Supabase** (Postgres and Auth) + FastAPI as a long-running Docker container on an **AWS Lightsail 4 GB** instance. Walkthrough: [docs/deploy.md](docs/deploy.md).
 
-1. Put the Supabase session-pooler URI in backend `DATABASE_URL` (Lightsail is IPv4-only).
-2. Build the backend image, load it on the Lightsail box, and start it with `scripts/lightsail-run.sh` (mounts `/opt/lociros/audio`). Set `APP_ENV=production`, `ADMIN_EMAILS`, and preferably `REQUIRE_AUTH=true`.
-3. Import the repo in [Vercel](https://vercel.com/new). Set **Root Directory** to `frontend`. Set `NLP_BACKEND_URL` to that API origin and the Supabase public variables. Leave `NEXT_PUBLIC_DEMO` unset.
-4. Add a second Vercel project with **Root Directory** `admin` for `admin.lociros.com`, with `ADMIN_EMAIL` set.
-5. Startup does not run migrations. Run `alembic upgrade head` against Supabase when a release adds one.
+1. Put the Supabase session-pooler URI in `/opt/lociros/.env` on the box as `DATABASE_URL` (Lightsail is IPv4-only), with `APP_ENV=production`, `PROXY_SECRET`, and `ADMIN_EMAILS`.
+2. Run `sudo sh infra/nginx-setup.sh api.lociros.com you@example.com` once on the box: swap, nginx, TLS, and the load balancer in front of the replicas.
+3. From the Mac: `SSH_KEY=… API_HOST=ubuntu@IP sh scripts/deploy-api.sh`. It builds the image, ships it, runs `alembic upgrade head`, and restarts two API replicas (plus Redis) one at a time. `scripts/rollback-api.sh` puts the previous image back.
+4. Import the repo in [Vercel](https://vercel.com/new). Set **Root Directory** to `frontend`. Set `NLP_BACKEND_URL=https://api.lociros.com`, `PROXY_SECRET`, and the Supabase public variables. Leave `NEXT_PUBLIC_DEMO` unset.
+5. Add a second Vercel project with **Root Directory** `admin` for `admin.lociros.com`, with `ADMIN_EMAIL` set.
 
 The frontend can still ship as a **static demo** (hand-authored catalog, `localStorage`, no generation) if you set `NEXT_PUBLIC_DEMO=1` at build time:
 
@@ -664,7 +666,7 @@ Grammar JSON is edited by hand. After changing grammar or vocab, restart the bac
 | `STRIPE_AUTOMATIC_TAX` | `true` | Stripe Tax on Checkout |
 | `SUPABASE_SERVICE_ROLE_KEY` | empty | Lets account deletion remove the Supabase login |
 | `SENTRY_DSN` | empty | Error reporting |
-| `NEWS_SCHEDULER` | `true` | Builds daily news in a background thread each hour |
+| `NEWS_SCHEDULER` | `false` | Builds daily news in a background thread each hour. Enable on one process only |
 | `MAX_BODY_BYTES` | `262144` | Request body cap (413 above it) |
 | `ADMIN_EMAILS` | empty | Comma-separated admin emails. Empty means nobody is admin |
 | `AUDIO_DIR` | `backend/audio` | Where catalog MP3s live |

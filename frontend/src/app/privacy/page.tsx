@@ -41,7 +41,7 @@ export default function PrivacyPage() {
       <p>
         Your level for each language, passages you read and rate, words you tap and save, review
         cards, comprehension answers, custom passage topics, and simple usage events such as
-        finishing a placement read or opening the plans page. Before you sign in these sit under
+        finishing the placement or opening the plans page. Before you sign in these sit under
         the device id; when you sign in they move onto your account.
       </p>
       <p>

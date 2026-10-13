@@ -45,6 +45,7 @@ def db():
 @pytest.fixture()
 def paywall(monkeypatch):
     monkeypatch.setattr(settings, "paywall_enabled", True)
+    monkeypatch.setattr(settings, "stripe_secret_key", "sk_test_fake")
     monkeypatch.setattr(settings, "stripe_webhook_secret", SECRET)
     monkeypatch.setattr(settings, "stripe_price_monthly", "price_month")
     monkeypatch.setattr(settings, "stripe_price_annual", "price_year")
@@ -166,6 +167,14 @@ def test_expired_trial_is_paywalled(client, db, paywall):
     )
     assert gen.status_code == 402
     assert client.get("/api/me", headers=_auth(user)).json()["entitlement"]["status"] == "expired"
+
+
+def test_paywall_stays_open_until_stripe_is_configured(client, db, paywall, monkeypatch):
+    monkeypatch.setattr(settings, "stripe_secret_key", "")
+    user = _user(db, trial_ends_at=datetime.now(timezone.utc) - timedelta(days=3))
+    passage = _passage(db)
+    assert client.get(f"/api/passages/{passage}", headers=_auth(user)).status_code == 200
+    assert client.get("/api/me", headers=_auth(user)).json()["entitlement"]["paywall"] is False
 
 
 def test_past_due_keeps_access(db, paywall):

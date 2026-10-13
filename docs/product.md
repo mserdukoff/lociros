@@ -4,7 +4,7 @@
 
 Lociros is a **CEFR-calibrated graded reader** for **Japanese**, **Italian**, **Russian**, and **Arabic** (A1–B2).
 
-It generates and serves short reading passages at a checkable CEFR band, then lets the learner tap any word for lemma, grammar, gloss, and (in Japanese) kanji or (in Arabic) the root and وزن. A short placement read sets the starting band. After each text the learner answers a few questions about the passage, then marks it **too easy**, **just right**, or **too hard**. Three ratings in a row move the band. Looked-up words come back in a later title. Once a day, one news passage from a real wire item is added at the learner's band.
+It generates and serves short reading passages at a checkable CEFR band, then lets the learner tap any word for lemma, grammar, gloss, and (in Japanese) kanji or (in Arabic) the root and وزن. A short placement ladder (a few passages, each a little harder) sets the starting band. After each text the learner answers a few questions about the passage, then marks it **too easy**, **just right**, or **too hard**. Three ratings in a row move the band. Looked-up words come back in a later title. Once a day, one news passage from a real wire item is added at the learner's band.
 
 The product claim is not “an LLM wrote some Japanese.” It is:
 
@@ -25,7 +25,7 @@ A landing page at `/` explains the claim and opens into the app. The main screen
 ### Shelf (`/library`)
 
 - Switch between Japanese, Italian, Russian, and Arabic. All four are public by default; `SHOW_ITALIAN`, `SHOW_RUSSIAN`, or `SHOW_ARABIC` set to `false` hides one.
-- Before a band is set, read one short passage and answer four questions. After that, see the current placement and how many lemmas have been seen.
+- Before a band is set, read a few plain-text passages from A1 upward, four questions each, until one is too hard. After that, see the current placement and how many lemmas have been seen. After 30 days away from a language, the shelf offers a re-check starting at the old band.
 - See today's news passage, with its source and date, when one was checked for this band.
 - Open a **Continue** recommendation, or any other title on the shelf.
 - Each card shows CEFR band, topic, word count, **new vs. known** content-word tokens, and whether the passage has already been read.
@@ -66,7 +66,7 @@ Generated texts are stored alongside these and appear on the same shelf.
 
 ```
 Start reading  →  language, only on a cold open with several languages public
-     →  placement read, if this language has no band yet (taps work; the result opens the next text)
+     →  placement ladder, if this language has no band yet (plain text; the result opens the next text)
      →  pick Continue (or any card, including today's news)
      →  read, tap words for gloss
      →  answer the passage questions
@@ -79,7 +79,7 @@ Optional side path: **Restock the shelf** → wait 20–40 seconds for constrain
 
 ### Onboarding
 
-There is no signup before the first passage. With the paywall on, finishing it offers an account right away, and opening a second passage shows the sign-up screen. With the paywall off, the account is offered under the first **Saved.** line ("This stays on this browser. Create an account to keep it."). Leaving the passage dismisses it; it comes back once, after the third finished passage, then stops. It is not shown in the demo, when Supabase Auth is not configured, or to a signed-in reader. Two one-time lines teach the app: **Tap any word.** above the placement passage (gone after the first gloss), and the three-in-a-row rule under the rating pills (gone after the first rating). All three states live in `localStorage`: `lociros.tap_hint`, `lociros.rating_hint`, `lociros.account_prompt`.
+There is no signup before the first passage. With the paywall on, finishing it offers an account right away, and opening a second passage shows the sign-up screen. With the paywall off, the account is offered under the first **Saved.** line ("This stays on this browser. Create an account to keep it."). Leaving the passage dismisses it; it comes back once, after the third finished passage, then stops. It is not shown in the demo, when Supabase Auth is not configured, or to a signed-in reader. Two one-time lines teach the app: **Tap any word.** above the first passage (gone after the first gloss), and the three-in-a-row rule under the rating pills (gone after the first rating). All three states live in `localStorage`: `lociros.tap_hint`, `lociros.rating_hint`, `lociros.account_prompt`.
 
 ## Scope
 

@@ -253,7 +253,16 @@ Client-only modules (`shelf.tsx`, `reader.tsx`, `generate-form.tsx`) use `"use c
 | `PUBLIC_BASE_URL` | `http://localhost:3000` | Public origin (OAuth, CORS, OpenRouter referer) |
 | `SUPABASE_URL` | empty | `https://PROJECT.supabase.co`. Inferred from a direct `db.*.supabase.co` database host |
 | `ADMIN_EMAILS` | empty | Comma-separated emails allowed on admin routes. Empty means nobody |
-| `REQUIRE_AUTH` | `false` | Generation needs a signed-in account |
+| `REQUIRE_AUTH` | `true` in production, else `false` | Generation needs a signed-in account |
+| `PROXY_SECRET` | empty | Shared with the Vercel frontend. Lets the API trust the visitor address Vercel forwards, so rate limits are per person |
+| `REDIS_URL` | empty | Shared rate-limit windows and cooldowns across replicas. Empty means per-process memory |
+| `NEWS_SCHEDULER` | `false` | Build daily news hourly. Enable on exactly one process |
+| `PAYWALL_ENABLED` | `true` in production, else `false` | Requests the paywall; it is enforced only when Stripe is configured |
+| `TRIAL_DAYS` / `FREE_GUEST_PASSAGES` | `7` / `1` | Trial length for a new account; passages a guest can open |
+| `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` | empty | Stripe API key and webhook signing secret |
+| `STRIPE_PRICE_MONTHLY` / `STRIPE_PRICE_ANNUAL` | empty | Stripe Price IDs for checkout |
+| `SUPABASE_SERVICE_ROLE_KEY` | empty | Lets account deletion remove the Supabase Auth user. Server only |
+| `SENTRY_DSN` | empty | Error reporting |
 | `GENERATE_MONTHLY_CAP` | `10` | Custom passages per identity per month (always enforced) |
 | `GENERATE_WORKERS` | `4` | Generation threads per API process (`0` to leave it to the worker service) |
 | `GENERATE_MAX_PENDING` | `3` | Unfinished jobs per identity |
@@ -265,7 +274,7 @@ Client-only modules (`shelf.tsx`, `reader.tsx`, `generate-form.tsx`) use `"use c
 | `COOKIE_SECURE` / `COOKIE_SAMESITE` / `COOKIE_DOMAIN` | production / `lax` / empty | Legacy auth cookie |
 | `LOG_LEVEL` | `info` | |
 
-Data files default to `{repo}/data`. Override with `DATA_DIR`. `WEB_CONCURRENCY` (read by `entrypoint.sh`, default 2) sets the uvicorn worker count.
+Data files default to `{repo}/data`. Override with `DATA_DIR`. `WEB_CONCURRENCY` (read by `entrypoint.sh`, default 1) sets the uvicorn worker count.
 
 **Frontend**
 
@@ -276,8 +285,14 @@ Data files default to `{repo}/data`. Override with `DATA_DIR`. `WEB_CONCURRENCY`
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | empty | Publishable key (never the secret). `NEXT_PUBLIC_SUPABASE_ANON_KEY` also works |
 | `NEXT_PUBLIC_DEMO` | empty | Static catalog + `localStorage`. Set to `1` at build time to skip FastAPI |
 | `NEXT_PUBLIC_STICKY_START_TEST` | empty | Enables the phone sticky Start button A/B test |
+| `PROXY_SECRET` | empty | Same value as the API's. Server only; sent with each proxied request |
+| `NEXT_PUBLIC_SITE_URL` | `https://lociros.com` | Canonical origin for metadata and the sitemap |
+| `NEXT_PUBLIC_PRICE_MONTHLY` / `NEXT_PUBLIC_PRICE_ANNUAL` / `NEXT_PUBLIC_PRICE_ANNUAL_NOTE` | `$9.99` / `$79.99` / copy | Pricing copy only |
+| `NEXT_PUBLIC_TRIAL_DAYS` | `7` | Trial length in the copy. Match the API's `TRIAL_DAYS` |
+| `NEXT_PUBLIC_CONTACT_EMAIL` | `hello@lociros.com` | Contact address in the footer and legal pages |
+| `NEXT_PUBLIC_SENTRY_DSN` / `SENTRY_DSN` | empty | Browser and server error reporting |
 
-**Admin** (`admin/.env.example`): `ADMIN_EMAIL` (required; unset locks everyone out), `NLP_BACKEND_URL`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `ADMIN_TIME_ZONE` (default `America/New_York`).
+**Admin** (`admin/.env.example`): `ADMIN_EMAIL` (required; unset locks everyone out), `NLP_BACKEND_URL`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `ADMIN_TIME_ZONE` (default `America/New_York`), `ADMIN_PRICE_MONTHLY` / `ADMIN_PRICE_ANNUAL` (revenue estimates), `NEXT_PUBLIC_SENTRY_DSN`.
 
 The frontend Docker image defaults `NLP_BACKEND_URL=http://backend:8000`. Compose can override it without rebuilding. On Vercel, set `NLP_BACKEND_URL` to the public FastAPI origin.
 

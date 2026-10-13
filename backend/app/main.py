@@ -32,7 +32,7 @@ def validate_production() -> None:
         raise RuntimeError(
             "JWT_SECRET must be a long random value when APP_ENV=production."
         )
-    if settings.paywall:
+    if settings.paywall_requested:
         missing = [
             name
             for name, value in (

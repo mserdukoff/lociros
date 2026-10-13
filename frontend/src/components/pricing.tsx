@@ -6,7 +6,7 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { AuthPanel } from "@/components/auth-panel";
 import { Art } from "@/components/landing/art";
 import { fetchMe, startCheckout, track, type Plan } from "@/lib/api";
-import { INCLUDED, PLANS, TRIAL_DAYS, safeNext } from "@/lib/plans";
+import { INCLUDED, PLANS, TRIAL_DAYS, TRIAL_NAME, safeNext } from "@/lib/plans";
 import type { MeResponse } from "@/lib/types";
 
 const noSubscribe = () => () => {};
@@ -18,8 +18,8 @@ function formatDate(iso: string | null | undefined): string | null {
 
 const FAQ: { q: string; a: React.ReactNode }[] = [
   {
-    q: "Do I need a card for the free week?",
-    a: `No. Create an account and the whole shelf is open for ${TRIAL_DAYS} days. If you subscribe during the free week, the first charge waits until the week is over.`,
+    q: `Do I need a card for the ${TRIAL_NAME}?`,
+    a: `No. Create an account and the whole shelf is open for ${TRIAL_DAYS} days. If you subscribe during the ${TRIAL_NAME}, the first charge waits until it is over.`,
   },
   {
     q: "How do I cancel?",
@@ -94,10 +94,10 @@ export function Pricing() {
     "Every passage is written to one band and checked word by word before it reaches the shelf. Create an account to open all of it.";
   if (status === "trial") {
     const days = ent?.trial_days_left ?? TRIAL_DAYS;
-    heading = days === 1 ? "One day left in your free week." : `${days} days left in your free week.`;
+    heading = days === 1 ? `One day left in your ${TRIAL_NAME}.` : `${days} days left in your ${TRIAL_NAME}.`;
     lede = `Subscribe now and the first charge waits until ${formatDate(ent?.trial_ends_at) ?? "the week ends"}.`;
   } else if (status === "expired") {
-    heading = "Your free week is over.";
+    heading = `Your ${TRIAL_NAME} is over.`;
     lede = "Subscribe to keep reading. Your level, saved words, and review cards are still here.";
   } else if (status === "grace") {
     heading = "Your last payment didn't go through.";

@@ -108,7 +108,8 @@ class Settings(BaseSettings):
     stripe_automatic_tax: bool = True
     supabase_service_role_key: str = ""
     contact_email: str = "hello@lociros.com"
-    news_scheduler: bool = True
+    # Off by default so extra replicas or workers never each build the news; enable on one process.
+    news_scheduler: bool = False
     max_body_bytes: int = 256 * 1024
     sentry_dsn: str = ""
     sentry_traces_sample_rate: float = 0.0
@@ -129,10 +130,15 @@ class Settings(BaseSettings):
         return self.app_env.lower() in {"production", "prod"}
 
     @property
-    def paywall(self) -> bool:
+    def paywall_requested(self) -> bool:
         if self.paywall_enabled is not None:
             return self.paywall_enabled
         return self.is_production
+
+    @property
+    def paywall(self) -> bool:
+        """Enforced only once Stripe can take payment, so an expired trial is never a dead end."""
+        return self.paywall_requested and self.billing_configured
 
     @property
     def preload_analyzers(self) -> bool:

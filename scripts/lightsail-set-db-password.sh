@@ -1,11 +1,16 @@
 #!/bin/sh
 # Run on the Lightsail box after resetting the Supabase database password.
 # Prompts for the new password, writes it into DATABASE_URL in /opt/lociros/.env,
-# then recreates lociros-api from the image it is running now.
+# then recreates the API replicas from the image replica 1 is running now.
 set -eu
 
 ENV_FILE="${ENV_FILE:-/opt/lociros/.env}"
-NAME="${NAME:-lociros-api}"
+NAME="${NAME:-lociros-api-1}"
+
+IMAGE="$(docker inspect -f '{{.Image}}' "$NAME" 2>/dev/null)" || {
+  echo "No container named $NAME. Set NAME to a running API replica." >&2
+  exit 1
+}
 
 printf "New Supabase database password: "
 stty -echo
@@ -32,5 +37,4 @@ open(path, "w").write(new)
 print(f"Updated DATABASE_URL in {path} (backup at {path}.bak)")
 PY
 
-IMAGE="$(docker inspect -f '{{.Image}}' "$NAME")"
-IMAGE="$IMAGE" NAME="$NAME" ENV_FILE="$ENV_FILE" sh "$(dirname "$0")/lightsail-run.sh"
+IMAGE="$IMAGE" ENV_FILE="$ENV_FILE" sh "$(dirname "$0")/lightsail-run.sh"

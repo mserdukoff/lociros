@@ -17,3 +17,7 @@ backend/audio/
 .env.local
 
 .tmp-ref/
+
+# Database backups
+*.dump
+*.sql.gz

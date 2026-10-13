@@ -74,6 +74,7 @@ jobs:
           cache-dependency-path: admin/package-lock.json
       - run: npm ci
       - run: npm run lint
+      - run: npm run typecheck
       - run: npm run build
 
   images:
@@ -81,6 +82,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build backend
-        run: docker build -f backend/Dockerfile -t levla-backend .
+        run: docker build -f backend/Dockerfile -t lociros-backend .
       - name: Build frontend
-        run: docker build -t levla-frontend ./frontend
+        run: docker build -t lociros-frontend ./frontend

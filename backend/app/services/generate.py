@@ -502,6 +502,7 @@ def complete_read(
         new, recycled = lemma_token_stats(tokens, language, seen)
         ingest_passage(db, identity, language, passage_id, tokens)
         apply_placement(learner, rating)
+        learner.placed = 1
         already = read_ids(db, identity)
         already.add(passage_id)
         next_id = pick_next_id(

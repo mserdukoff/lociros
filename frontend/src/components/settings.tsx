@@ -13,6 +13,7 @@ import {
   pricingHref,
   updateProfile,
 } from "@/lib/api";
+import { TRIAL_NAME } from "@/lib/plans";
 import {
   loadFadeKnown,
   loadFurigana,
@@ -74,7 +75,7 @@ function planLine(ent: Entitlement | null | undefined): string {
     case "grace":
       return `${plan}. The last payment failed; Stripe will retry. Update your card to keep access.`;
     case "expired":
-      return "The free week is over. Subscribe to keep reading.";
+      return `The ${TRIAL_NAME} is over. Subscribe to keep reading.`;
     default:
       return "";
   }

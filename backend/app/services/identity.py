@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
 from fastapi import Header, Request
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.db import (
@@ -17,13 +19,17 @@ from app.models.db import (
 )
 
 _DEVICE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
+# The server stores signed-in learners under device_id "user-<id>"; a browser may not claim one.
+_RESERVED = re.compile(r"^user-\d+$")
+# Guest rows untouched this long are not attached to an account at sign-in.
+MERGE_WINDOW = timedelta(days=30)
 
 
 def valid_device_id(device_id: str | None) -> str | None:
     if not device_id:
         return None
     value = device_id.strip()
-    if _DEVICE.match(value):
+    if _DEVICE.match(value) and not _RESERVED.match(value):
         return value
     return None
 
@@ -74,6 +80,30 @@ _MERGE_KEYS = (
 )
 
 
+def _recent_guest(db: Session, device_id: str) -> bool:
+    cutoff = datetime.now(timezone.utc) - MERGE_WINDOW
+    for model, column in (
+        (LearnerRow, LearnerRow.updated_at),
+        (LearnerReadRow, LearnerReadRow.created_at),
+        (LearnerTapRow, LearnerTapRow.seen_at),
+        (LearnerStarRow, LearnerStarRow.created_at),
+        (LearnerLemmaRow, LearnerLemmaRow.created_at),
+        (LearnerCardRow, LearnerCardRow.created_at),
+        (LearnerNewsSaveRow, LearnerNewsSaveRow.saved_at),
+    ):
+        latest = (
+            db.query(func.max(column))
+            .filter(model.device_id == device_id, model.user_id.is_(None))
+            .scalar()
+        )
+        if latest is not None:
+            if latest.tzinfo is None:
+                latest = latest.replace(tzinfo=timezone.utc)
+            if latest >= cutoff:
+                return True
+    return False
+
+
 def merge_guest_into_user(db: Session, device_id: str, user_id: int) -> None:
     """Move this browser's rows onto the account.
 
@@ -83,7 +113,7 @@ def merge_guest_into_user(db: Session, device_id: str, user_id: int) -> None:
     never overwritten by a browser's. An account row that was never placed
     takes the browser's band.
     """
-    if not device_id:
+    if not device_id or not _recent_guest(db, device_id):
         return
     for model, fields in _MERGE_KEYS:
         owned = {

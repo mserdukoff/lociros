@@ -30,6 +30,7 @@ services:
       DATABASE_URL: postgresql://levla:levla@postgres:5432/levla
       AUDIO_DIR: /app/backend/audio
       GENERATE_WORKERS: 2
+      NEWS_SCHEDULER: "true"
     depends_on:
       postgres:
         condition: service_healthy
